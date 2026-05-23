@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#075e54" />
+  <title>WhatsApp Grocery Shop</title>
+  <style>
+    :root {
+      --wa-green: #075e54;
+      --wa-green-light: #128c7e;
+      --wa-teal: #25d366;
+      --wa-bg: #e5ddd5;
+      --wa-chat: #efeae2;
+      --card: #fff;
+      --text: #111;
+      --muted: #667781;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--wa-bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: 88px;
+    }
+    header {
+      background: var(--wa-green);
+      color: #fff;
+      padding: 10px 12px 12px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .back-wa {
+      flex-shrink: 0;
+      border: none;
+      background: rgba(255,255,255,.2);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; }
+    header p { font-size: 0.72rem; opacity: 0.9; margin-top: 2px; }
+    .chrome-warn {
+      display: none;
+      background: #fff3cd;
+      color: #856404;
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      border-bottom: 1px solid #ffc107;
+    }
+    .chrome-warn.show { display: block; }
+    .done-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 70;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .done-panel.open { display: flex; }
+    .done-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 320px;
+      text-align: center;
+    }
+    .done-box button {
+      width: 100%;
+      margin-top: 12px;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-wa { background: var(--wa-teal); color: #fff; }
+    .btn-secondary { background: #eee; color: #333; }
+    .cats {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      background: var(--wa-chat);
+      border-bottom: 1px solid #d1d7db;
+    }
+    .cat-btn {
+      border: none;
+      background: #fff;
+      color: var(--wa-green);
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .cat-btn.active {
+      background: var(--wa-green-light);
+      color: #fff;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 12px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.08);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .card .emoji { font-size: 1.6rem; }
+    .card h3 { font-size: 0.85rem; line-height: 1.2; }
+    .card .meta { font-size: 0.72rem; color: var(--muted); }
+    .card .price { font-size: 0.95rem; font-weight: 700; color: var(--wa-green); }
+    .qty-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: auto;
+      gap: 6px;
+    }
+    .qty-row button {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: var(--wa-teal);
+      color: #fff;
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
+    .qty-row button:disabled { opacity: 0.4; }
+    .qty-row span { font-weight: 600; min-width: 20px; text-align: center; }
+    .add-btn {
+      flex: 1;
+      border: none;
+      background: var(--wa-green);
+      color: #fff;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .cart-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--wa-green);
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 30;
+      box-shadow: 0 -2px 8px rgba(0,0,0,.15);
+    }
+    .cart-bar button {
+      background: var(--wa-teal);
+      border: none;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 24px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 40;
+    }
+    .overlay.open { display: block; }
+    .drawer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-height: 75dvh;
+      background: #fff;
+      border-radius: 16px 16px 0 0;
+      z-index: 50;
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .drawer.open { transform: translateY(0); }
+    .drawer-head {
+      padding: 16px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drawer-body { overflow-y: auto; padding: 12px 16px; flex: 1; }
+    .line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+      gap: 8px;
+    }
+    .line .info { flex: 1; }
+    .line h4 { font-size: 0.9rem; }
+    .line small { color: var(--muted); }
+    .toast {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #323232;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      z-index: 60;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+    .no-user {
+      padding: 24px;
+      text-align: center;
+      color: #b91c1c;
+      background: #fef2f2;
+      margin: 16px;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="chrome-warn" class="chrome-warn">
+    ⚠️ You opened in Chrome. Go to <b>WhatsApp chat</b> → tap green <b>Open Shop</b> button (not this browser tab).
+  </div>
+
+  <header>
+    <div class="header-row">
+      <button type="button" class="back-wa" id="back-wa">← WhatsApp</button>
+      <div>
+        <h1>🛒 Grocery Shop</h1>
+        <p id="subtitle">Inside WhatsApp</p>
+      </div>
+    </div>
+  </header>
+
+  <div id="no-user" class="no-user" style="display:none">
+    Open from WhatsApp: send <b>hi</b> to the bot → tap <b>Open Shop</b> (green button).
+  </div>
+
+  <div class="cats" id="cats"></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="cart-bar" id="cart-bar" style="display:none">
+    <div>
+      <div style="font-size:0.75rem;opacity:.9">Cart</div>
+      <div id="cart-total" style="font-weight:700">₹0</div>
+    </div>
+    <button type="button" id="view-cart">View cart (<span id="cart-count">0</span>)</button>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <strong>Your cart</strong>
+      <button type="button" id="close-drawer" style="border:none;background:none;font-size:1.2rem">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div style="padding:12px 16px;border-top:1px solid #eee;display:flex;flex-direction:column;gap:8px">
+      <button type="button" id="checkout" style="width:100%;padding:14px;border:none;background:#25d366;color:#fff;border-radius:12px;font-weight:700;font-size:1rem">
+        Place order
+      </button>
+      <button type="button" id="back-from-cart" class="back-wa" style="width:100%;background:var(--wa-green);color:#fff">
+        Done → Back to WhatsApp
+      </button>
+    </div>
+  </div>
+
+  <div class="done-panel" id="done-panel">
+    <div class="done-box">
+      <h2 style="font-size:1.1rem;margin-bottom:8px">Order placed ✅</h2>
+      <p id="done-msg" style="font-size:0.9rem;color:#444"></p>
+      <button type="button" class="btn-wa" id="done-back-wa">Back to WhatsApp chat</button>
+      <button type="button" class="btn-secondary" id="done-stay">Continue shopping</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const USER = params.get("u") || params.get("user") || "";
+    const API = "/api/shop";
+
+    const state = { products: [], categories: [], filter: "", cartQty: {}, waBackUrl: null };
+
+    function isInWhatsApp() {
+      const ua = navigator.userAgent || "";
+      return /WhatsApp/i.test(ua) || /WAWeb/i.test(ua);
+    }
+
+    function isExternalBrowser() {
+      return !isInWhatsApp() && /Chrome|CriOS|Firefox|Safari/i.test(navigator.userAgent);
+    }
+
+    function backToWhatsApp() {
+      if (state.waBackUrl) {
+        window.location.href = state.waBackUrl;
+        return;
+      }
+      try { window.close(); } catch (e) {}
+      toast("Return to WhatsApp chat");
+    }
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), 2000);
+    }
+
+    function apiHeaders() {
+      const h = { "Content-Type": "application/json" };
+      if (location.hostname.includes("ngrok")) {
+        h["ngrok-skip-browser-warning"] = "1";
+      }
+      return h;
+    }
+
+    async function api(path, opts = {}) {
+      const r = await fetch(API + path, {
+        headers: { ...apiHeaders(), ...(opts.headers || {}) },
+        ...opts,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || r.statusText);
+      return data;
+    }
+
+    function emojiFor(cat) {
+      const m = { oil: "🛢️", rice: "🍚", dal: "🫘", dairy: "🥛", essentials: "🧂", household: "🧺", snacks: "🍜", beverages: "☕", vegetables: "🧅", flour: "🌾", bakery: "🍞", personal_care: "🧴" };
+      return m[cat] || "🛒";
+    }
+
+    async function loadProducts() {
+      const q = state.filter ? `?category=${state.filter}` : "";
+      const data = await api("/products" + q);
+      state.products = data.products;
+      state.categories = data.categories;
+      renderCats();
+      renderGrid();
+    }
+
+    async function syncCart() {
+      if (!USER) return;
+      const data = await api(`/cart?user_id=${encodeURIComponent(USER)}`);
+      state.cartQty = {};
+      data.lines.forEach((l) => { state.cartQty[l.product_id] = l.quantity; });
+      document.getElementById("cart-count").textContent = data.item_count;
+      document.getElementById("cart-total").textContent = "₹" + data.total_inr.toFixed(2);
+      document.getElementById("cart-bar").style.display = data.item_count ? "flex" : "none";
+      return data;
+    }
+
+    async function addToCart(productId, qty) {
+      await api("/cart/add", {
+        method: "POST",
+        body: JSON.stringify({ user_id: USER, product_id: productId, quantity: qty }),
+      });
+      await syncCart();
+      toast("Added to cart ✓");
+    }
+
+    async function setQty(productId, qty) {
+      await api("/cart/update", {
+        method: "PUT",
+        body: JSON.stringify({ user_id: USER, product_id: productId, quantity: qty }),
+      });
+      await syncCart();
+    }
+
+    function renderCats() {
+      const el = document.getElementById("cats");
+      const btns = [{ id: "", label: "All" }, ...state.categories.map((c) => ({ id: c, label: c }))];
+      el.innerHTML = btns.map((b) =>
+        `<button class="cat-btn ${state.filter === b.id ? "active" : ""}" data-cat="${b.id}">${b.label}</button>`
+      ).join("");
+      el.querySelectorAll(".cat-btn").forEach((btn) => {
+        btn.onclick = () => {
+          state.filter = btn.dataset.cat || "";
+          loadProducts();
+        };
+      });
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById("grid");
+      if (!state.products.length) {
+        grid.innerHTML = '<div class="empty">No products</div>';
+        return;
+      }
+      grid.innerHTML = state.products.map((p) => {
+        const q = state.cartQty[p.id] || 0;
+        return `
+          <article class="card">
+            <div class="emoji">${emojiFor(p.category)}</div>
+            <h3>${p.name}</h3>
+            <div class="meta">${p.unit} · stock ${p.stock}</div>
+            <div class="price">₹${p.price_inr.toFixed(2)}</div>
+            <div class="qty-row">
+              ${q > 0 ? `
+                <button type="button" data-dec="${p.id}">−</button>
+                <span>${q}</span>
+                <button type="button" data-inc="${p.id}">+</button>
+              ` : `<button class="add-btn" type="button" data-add="${p.id}">Add to cart</button>`}
+            </div>
+          </article>`;
+      }).join("");
+
+      grid.querySelectorAll("[data-add]").forEach((b) =>
+        b.onclick = () => addToCart(b.dataset.add, 1)
+      );
+      grid.querySelectorAll("[data-inc]").forEach((b) =>
+        b.onclick = async () => {
+          const id = b.dataset.inc;
+          await setQty(id, (state.cartQty[id] || 0) + 1);
+          renderGrid();
+          toast("Updated");
+        }
+      );
+      grid.querySelectorAll("[data-dec]").forEach((b) =>
+        b.onclick = async () => {
+          const id = b.dataset.dec;
+          const n = (state.cartQty[id] || 0) - 1;
+          await setQty(id, n);
+          renderGrid();
+        }
+      );
+    }
+
+    async function openDrawer() {
+      const data = await syncCart();
+      const body = document.getElementById("drawer-body");
+      if (!data.lines.length) {
+        body.innerHTML = '<div class="empty">Cart is empty</div>';
+      } else {
+        body.innerHTML = data.lines.map((l) => `
+          <div class="line">
+            <div class="info">
+              <h4>${l.name}</h4>
+              <small>${l.unit} × ${l.quantity} · ₹${l.line_total_inr.toFixed(2)}</small>
+            </div>
+            <button type="button" data-rm="${l.product_id}" style="border:none;background:#fee2e2;color:#b91c1c;padding:6px 10px;border-radius:8px">Remove</button>
+          </div>
+        `).join("");
+        body.querySelectorAll("[data-rm]").forEach((btn) =>
+          btn.onclick = async () => {
+            await setQty(btn.dataset.rm, 0);
+            await openDrawer();
+            renderGrid();
+          }
+        );
+      }
+      document.getElementById("overlay").classList.add("open");
+      document.getElementById("drawer").classList.add("open");
+    }
+
+    function closeDrawer() {
+      document.getElementById("overlay").classList.remove("open");
+      document.getElementById("drawer").classList.remove("open");
+    }
+
+    document.getElementById("view-cart").onclick = openDrawer;
+    document.getElementById("close-drawer").onclick = closeDrawer;
+    document.getElementById("overlay").onclick = closeDrawer;
+
+    document.getElementById("checkout").onclick = async () => {
+      try {
+        const r = await api(`/checkout?user_id=${encodeURIComponent(USER)}`, { method: "POST" });
+        closeDrawer();
+        document.getElementById("done-msg").innerHTML =
+          `Order <b>#${r.order_id}</b><br>Total ₹${r.total_inr}<br><small>Check WhatsApp — we sent confirmation in chat.</small>`;
+        document.getElementById("done-panel").classList.add("open");
+        await syncCart();
+        renderGrid();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+
+    document.getElementById("back-wa").onclick = backToWhatsApp;
+    document.getElementById("back-from-cart").onclick = backToWhatsApp;
+    document.getElementById("done-back-wa").onclick = backToWhatsApp;
+    document.getElementById("done-stay").onclick = () =>
+      document.getElementById("done-panel").classList.remove("open");
+
+    async function init() {
+      try {
+        const cfg = await api("/config");
+        state.waBackUrl = cfg.wa_back_url;
+      } catch (e) { /* ignore */ }
+
+      if (isExternalBrowser()) {
+        document.getElementById("chrome-warn").classList.add("show");
+      }
+
+      if (!USER) {
+        document.getElementById("no-user").style.display = "block";
+        document.getElementById("grid").innerHTML = "";
+        return;
+      }
+      document.getElementById("subtitle").textContent = isInWhatsApp()
+        ? "WhatsApp shop · " + USER
+        : "Open via WhatsApp button";
+      await loadProducts();
+      await syncCart();
+    }
+    init();
+  </script>
+</body>
+</html>
