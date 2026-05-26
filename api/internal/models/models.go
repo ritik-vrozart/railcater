@@ -74,6 +74,9 @@ type Order struct {
 	DeliveryWindowStart  *time.Time  `json:"delivery_window_start,omitempty"`
 	DeliveryWindowEnd    *time.Time  `json:"delivery_window_end,omitempty"`
 	DeliveryNotifiedAt   *time.Time  `json:"delivery_notified_at,omitempty"`
+	ExpectedDeliveryAt   *time.Time  `json:"expected_delivery_at,omitempty"`
+	PaymentStatus        string      `json:"payment_status,omitempty"`
+	PaymentMethod        *string     `json:"payment_method,omitempty"`
 	Items                []OrderItem `json:"items,omitempty"`
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`

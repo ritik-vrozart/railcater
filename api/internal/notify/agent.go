@@ -17,8 +17,7 @@ type deliveryPayload struct {
 	OrderID             string  `json:"order_id"`
 	Phone               string  `json:"phone"`
 	PassengerName       *string `json:"passenger_name,omitempty"`
-	StationName         *string `json:"station_name,omitempty"`
-	StationCode         *string `json:"station_code,omitempty"`
+	TrainNumber         *string `json:"train_number,omitempty"`
 	Coach               *string `json:"coach,omitempty"`
 	Berth               *string `json:"berth,omitempty"`
 	DeliveryWindowStart string  `json:"delivery_window_start"`
@@ -49,8 +48,7 @@ func DeliverySchedule(ctx context.Context, agentURL, secret string, order models
 		OrderID:             order.ID.String(),
 		Phone:               strings.TrimSpace(*order.CustomerPhone),
 		PassengerName:       order.PassengerName,
-		StationName:         order.StationName,
-		StationCode:         order.StationCode,
+		TrainNumber:         order.TrainNumber,
 		Coach:               order.Coach,
 		Berth:               order.Berth,
 		DeliveryWindowStart: order.DeliveryWindowStart.Format(time.RFC3339),

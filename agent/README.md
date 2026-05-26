@@ -1,13 +1,13 @@
 # WhatsApp Train Food Agent (FastAPI + Google ADK)
 
-AI train food ordering bot for WhatsApp. Uses **Google ADK** with **Gemini** and the **Go backend API** for PNR lookup, vendor menus, and train orders.
+AI train food ordering bot for WhatsApp. Uses **Google ADK** with **Gemini** and the **Go backend API**.
 
 ## Features
 
-- **PNR lookup** → choose delivery station → vendor → menu portions → cart → checkout
-- **WhatsApp interactive UI**: buttons + list menus for stations, vendors, and food items
-- **Go API integration**: `GET /pnr`, `POST /orders/validate-delivery`, `POST /orders/train`
-- Free-text still uses Gemini with train-food tools
+- **Train number** → pantry auto-selected → name → seat → category / smart search → cart → checkout
+- **WhatsApp interactive UI**: buttons + list menus for categories and food items
+- **Natural language**: "paneer thali chahiye", "2 chai" — menu search without station/PNR
+- **Go API**: `GET /trains/number/{n}`, `POST /orders/train/whatsapp`
 - Hindi / English / Hinglish
 - Webhook: `GET` + `POST /webhook`
 - Test without WhatsApp: `POST /chat`
@@ -18,7 +18,7 @@ AI train food ordering bot for WhatsApp. Uses **Google ADK** with **Gemini** and
 2. **Gemini API key** for ADK
 3. **WhatsApp Cloud API** tokens (for live WhatsApp)
 
-Demo PNR: `1234567890` (seeded in migration `002_train_food`)
+Demo train number: `12951`
 
 ## Setup
 
@@ -50,7 +50,7 @@ uvicorn main:app --reload --port 8000
 ```bash
 curl -s -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"user_id":"919876543210","message":"My PNR is 1234567890"}'
+  -d '{"user_id":"919876543210","message":"How do I order food on this train?"}'
 ```
 
 ## WhatsApp webhook
@@ -63,45 +63,26 @@ curl -s -X POST http://localhost:8000/chat \
 
 ### Permanent WhatsApp token (recommended)
 
-Graph API Explorer tokens expire in **~24 hours** and cause `401 Authentication Error`.
+See `scripts/save_whatsapp_token.py` — store token in `data/whatsapp_token.txt` (gitignored).
 
-Use a **System User** token (does not expire):
+## ADK agent tools (current flow)
 
-1. [Meta Business Suite](https://business.facebook.com/) → **Business settings** → **System users**
-2. Add system user → **Generate token** → select your app
-3. Permissions: `whatsapp_business_messaging`, `whatsapp_business_management`
-4. Save the token locally (never commit it):
+| Tool | Purpose |
+|------|---------|
+| `lookup_train` | Train number → pantry |
+| `set_passenger_name` / `set_delivery_seat` | Passenger details |
+| `list_menu_categories` / `select_category` | Category pick |
+| `search_menu` | Natural-language menu search |
+| `browse_menu` | List items in category |
+| `add_meal_to_cart` / `view_train_cart` | Cart |
+| `place_train_order` | Checkout via `POST /orders/train/whatsapp` |
 
-```bash
-cd agent
-source .venv/bin/activate
-python scripts/save_whatsapp_token.py "YOUR_PERMANENT_TOKEN_HERE"
-```
-
-The token is stored in `data/whatsapp_token.txt` (gitignored) and used on every restart.
-
-Optional: set `WHATSAPP_APP_ID` + `WHATSAPP_APP_SECRET` in `.env` to auto-exchange short-lived tokens for **~60-day** tokens on startup and after 401.
-
-You can leave `WHATSAPP_ACCESS_TOKEN` empty in `.env` once the file is saved.
-
-## ADK agent tools
-
-| Tool | Backend API |
-|------|-------------|
-| `lookup_pnr` | `GET /api/v1/pnr/{pnr}` |
-| `select_delivery_station` | `POST /api/v1/orders/validate-delivery` |
-| `list_vendors_at_station` | `GET /api/v1/stations/{id}/vendors` |
-| `select_vendor` / `browse_menu` | `GET /api/v1/vendors/{id}/menu` |
-| `add_meal_to_cart` | (session) |
-| `place_train_order` | `POST /api/v1/orders/train` |
-| `get_recent_orders` | `GET /api/v1/orders` |
-
-Orders use `menu_portion_id` (UUID from menu portions), not `menu_item_id`.
+No PNR or station tools — pantry is tied to the train.
 
 ## Architecture
 
 ```
-WhatsApp → agent:8000/webhook → train_menu_handler (buttons)
-                              → agent_runner + Gemini (free text)
+WhatsApp → agent:8000/webhook → train_menu_handler (guided flow + NLP)
+                              → agent_runner + Gemini (help / edge cases)
                               → train_tools → api_client → Go API :8080
 ```

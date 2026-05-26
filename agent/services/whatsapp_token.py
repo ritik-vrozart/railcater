@@ -106,7 +106,8 @@ async def exchange_long_lived(short_token: str) -> str:
             "Set WHATSAPP_APP_ID and WHATSAPP_APP_SECRET in .env to auto-refresh tokens"
         )
 
-    url = "https://graph.facebook.com/oauth/access_token"
+    base = settings.whatsapp_graph_api_base.rstrip("/")
+    url = f"{base}/oauth/access_token"
     params = {
         "grant_type": "fb_exchange_token",
         "client_id": app_id,
@@ -137,7 +138,8 @@ async def debug_token_info(token: str) -> dict:
         return {}
 
     app_token = f"{app_id}|{app_secret}"
-    url = f"https://graph.facebook.com/{settings.whatsapp_api_version}/debug_token"
+    base = settings.whatsapp_graph_api_base.rstrip("/")
+    url = f"{base}/{settings.whatsapp_api_version}/debug_token"
     params = {"input_token": token, "access_token": app_token}
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(url, params=params)

@@ -34,7 +34,8 @@ class WhatsAppClient:
         return bool(get_access_token() and self._phone_id)
 
     def _url(self) -> str:
-        return f"https://graph.facebook.com/{self._version}/{self._phone_id}/messages"
+        base = settings.whatsapp_graph_api_base.rstrip("/")
+        return f"{base}/{self._version}/{self._phone_id}/messages"
 
     async def _send(self, to: str, payload: dict[str, Any], *, _retried: bool = False) -> dict | None:
         token = get_access_token()

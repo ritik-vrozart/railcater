@@ -19,7 +19,8 @@ type orderStatusPayload struct {
 	PassengerName *string `json:"passenger_name,omitempty"`
 	Status        string  `json:"status"`
 	TrainNumber   *string `json:"train_number,omitempty"`
-	StationName   *string `json:"station_name,omitempty"`
+	Coach         *string `json:"coach,omitempty"`
+	Berth         *string `json:"berth,omitempty"`
 }
 
 // OrderStatus asks the Python agent to notify the customer about order status changes.
@@ -44,7 +45,8 @@ func OrderStatus(ctx context.Context, agentURL, secret string, order models.Orde
 		PassengerName: order.PassengerName,
 		Status:        status,
 		TrainNumber:   order.TrainNumber,
-		StationName:   order.StationName,
+		Coach:         order.Coach,
+		Berth:         order.Berth,
 	})
 	if err != nil {
 		slog.Error("order status notify marshal", "err", err)

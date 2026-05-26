@@ -58,8 +58,14 @@ def clear_cart(user_id: str) -> None:
 
 
 def add_order(user_id: str, items: list[CartLine], total_cents: int) -> Order:
+    from config import settings
+
     order_id = str(uuid.uuid4())[:8]
-    payment_link = f"https://pay.example.com/order/{order_id}?amount={total_cents / 100:.2f}"
+    base = (settings.payment_link_base_url or "").strip().rstrip("/")
+    if base:
+        payment_link = f"{base}/order/{order_id}?amount={total_cents / 100:.2f}"
+    else:
+        payment_link = ""
     order = Order(
         id=order_id,
         user_id=user_id,

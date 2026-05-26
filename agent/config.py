@@ -20,29 +20,36 @@ class Settings(BaseSettings):
 
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
-    whatsapp_verify_token: str = "whatsapp_bot_verify"
+    whatsapp_verify_token: str = ""
     whatsapp_api_version: str = "v21.0"
-    # Optional: Meta app credentials for auto long-lived token exchange (~60 days)
+    whatsapp_graph_api_base: str = "https://graph.facebook.com"
     whatsapp_app_id: str = ""
     whatsapp_app_secret: str = ""
-    # Persisted token file (default agent/data/whatsapp_token.txt) — survives restarts
     whatsapp_token_file: str = ""
-    # Business number for wa.me "back to chat" (digits only, e.g. 15551919669)
-    whatsapp_wa_me_number: str = "15551919669"
+    whatsapp_wa_me_number: str = ""
 
-    app_name: str = "whatsapp_shop_agent"
+    app_name: str = "whatsapp_train_food_agent"
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
 
-    # Public URL for mini shop link in WhatsApp (your ngrok URL, no trailing slash)
-    public_base_url: str = "http://localhost:8000"
+    # Public URL (HTTPS) — WhatsApp webhook, shop links (no trailing slash)
+    public_base_url: str = ""
 
-    # Go backend API (train food orders, PNR, menu)
-    api_base_url: str = "http://localhost:8080"
+    # Go backend API (no trailing slash)
+    api_base_url: str = ""
 
-    # Shared secret for Go API → agent delivery notifications
-    agent_notify_secret: str = "dev-notify-secret"
+    # Must match api/.env AGENT_NOTIFY_SECRET
+    agent_notify_secret: str = ""
+
+    # Fallback menu photo when vendor item has no image_url (HTTPS)
+    default_menu_image_url: str = ""
+
+    # Legacy grocery shop payment link base (optional)
+    payment_link_base_url: str = ""
+
+    # Shown in bot help / demos (optional)
+    demo_train_number: str = ""
 
 
 settings = Settings()

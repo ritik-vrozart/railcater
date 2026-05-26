@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,9 +15,10 @@ import (
 )
 
 type updateOrderDeliveryRequest struct {
-	DeliveryWindowStart string `json:"delivery_window_start"`
-	DeliveryWindowEnd   string `json:"delivery_window_end"`
-	NotifyCustomer      *bool  `json:"notify_customer"`
+	DeliveryWindowStart  string `json:"delivery_window_start"`
+	DeliveryWindowEnd    string `json:"delivery_window_end"`
+	ExpectedDeliveryAt   string `json:"expected_delivery_at"`
+	NotifyCustomer       *bool  `json:"notify_customer"`
 }
 
 func (s *Server) UpdateOrderDelivery(w http.ResponseWriter, r *http.Request) {
@@ -35,12 +37,16 @@ func (s *Server) UpdateOrderDelivery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid json body"))
 		return
 	}
-	if req.DeliveryWindowStart == "" {
-		writeError(w, apperror.BadRequest("delivery_window_start is required"))
+	at := strings.TrimSpace(req.ExpectedDeliveryAt)
+	if at == "" {
+		at = strings.TrimSpace(req.DeliveryWindowStart)
+	}
+	if at == "" {
+		writeError(w, apperror.BadRequest("expected_delivery_at or delivery_window_start is required"))
 		return
 	}
 
-	start, err := time.Parse(time.RFC3339, req.DeliveryWindowStart)
+	start, err := time.Parse(time.RFC3339, at)
 	if err != nil {
 		writeError(w, apperror.BadRequest("delivery_window_start must be RFC3339"))
 		return

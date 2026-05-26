@@ -110,6 +110,51 @@ func (r *VendorRepository) ListForTrain(ctx context.Context, tenantID, trainID u
 	return items, rows2.Err()
 }
 
+// FirstLinkedStation returns any active station linked to the pantry (fallback for onboard WhatsApp orders).
+func (r *VendorRepository) FirstLinkedStation(ctx context.Context, vendorID uuid.UUID) (uuid.UUID, error) {
+	var stationID uuid.UUID
+	err := r.pool.QueryRow(ctx, `
+		SELECT vs.station_id
+		FROM vendor_stations vs
+		WHERE vs.vendor_id = $1 AND vs.is_active
+		ORDER BY vs.station_id
+		LIMIT 1
+	`, vendorID).Scan(&stationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, apperror.ErrNotFound
+	}
+	return stationID, err
+}
+
+// EnsureLinkedStation links the pantry to a default station when it has none (onboard-only trains).
+func (r *VendorRepository) EnsureLinkedStation(ctx context.Context, vendorID uuid.UUID) error {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM vendor_stations WHERE vendor_id = $1 AND is_active)
+	`, vendorID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	var stationID uuid.UUID
+	err := r.pool.QueryRow(ctx, `SELECT id FROM stations ORDER BY code LIMIT 1`).Scan(&stationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperror.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO vendor_stations (vendor_id, station_id, is_active)
+		VALUES ($1, $2, true)
+		ON CONFLICT (vendor_id, station_id) DO UPDATE SET is_active = true
+	`, vendorID, stationID)
+	return err
+}
+
 func (r *VendorRepository) FirstStationOnTrainRoute(ctx context.Context, vendorID, trainID uuid.UUID) (uuid.UUID, error) {
 	var stationID uuid.UUID
 	err := r.pool.QueryRow(ctx, `

@@ -13,7 +13,13 @@ from __future__ import annotations
 import logging
 import re
 
+from config import settings
 from services import api_client
+from services.food_handler import (
+    handle_food_message,
+    send_smart_order_prompt,
+)
+from services.food_intent import looks_like_food_order
 from services.menu_images import resolve_menu_image_url
 from services.whatsapp import WhatsAppClient, _clip
 from store.session import FlowStep, get_session
@@ -23,17 +29,28 @@ logger = logging.getLogger(__name__)
 
 MENU_HOME = "menu_home"
 MENU_TRAIN_ORDER = "menu_train"
+MENU_ADD_MORE = "menu_add_more"
 MENU_TRAIN_CART = "menu_train_cart"
 MENU_TRAIN_CHECKOUT = "train_checkout"
 MENU_ORDERS = "menu_orders"
 
 CAT_PREFIX = "cat_"
 PORTION_PREFIX = "mp_"
-MENU_PAGE_PREFIX = "mpg_"
+MENU_LIST_PAGE_PREFIX = "mlp_"
+MENU_IMAGE_PAGE_PREFIX = "mimg_"
+MENU_SHOW_IMAGES = "menu_show_img"
+ITEM_PHOTO_PREFIX = "mphoto_"
 TRAIN_ADD1_PREFIX = "tadd1_"
 TRAIN_ADD2_PREFIX = "tadd2_"
 
-MENU_ITEMS_PER_PAGE = 5
+MENU_LIST_ITEMS_PER_PAGE = 10  # WhatsApp list max rows
+MENU_IMAGE_ITEMS_PER_PAGE = 5  # only when user asks for photos
+
+SHOW_IMAGE_TRIGGERS = {
+    "show image", "show images", "image dikhao", "photo dikhao", "photos dikhao",
+    "image dikha", "photo dikha", "pics dikhao", "show photo", "show photos",
+    "image show", "photo show",
+}
 
 TRAIN_NUMBER_PATTERN = re.compile(r"\b(\d{4,6})\b")
 SEAT_PATTERN = re.compile(r"(?i)([A-Z]\d+)\s*[/\s,\-]+\s*(\d+)")
@@ -79,15 +96,14 @@ async def send_main_menu(wa: WhatsAppClient, to: str) -> None:
     if not api_client.api_enabled():
         await wa.send_text(
             to,
-            "⚠️ Backend API is not configured. Set *API_BASE_URL* in agent/.env "
-            "(e.g. http://localhost:8080) and start the Go server.",
+            "⚠️ Backend API is not configured. Set *API_BASE_URL* in agent/.env and start the Go API.",
         )
         return
 
     if not _api_ok():
         await wa.send_text(
             to,
-            "⚠️ Cannot reach the backend API. Start the Go server on port 8080, then try again.",
+            f"⚠️ Cannot reach the backend API at {settings.api_base_url or '(API_BASE_URL not set)'}.",
         )
         return
 
@@ -111,6 +127,7 @@ async def send_main_menu(wa: WhatsAppClient, to: str) -> None:
 
 
 async def send_train_prompt(wa: WhatsAppClient, to: str) -> None:
+    """Start a fresh order (clears previous train context)."""
     _set_user(to)
     sess = get_session(to)
     sess.reset_journey()
@@ -122,6 +139,35 @@ async def send_train_prompt(wa: WhatsAppClient, to: str) -> None:
         "Apni train ka *number* bhejein (ticket par likha hota hai).\n\n"
         "Example: `12951`",
     )
+
+
+async def resume_ordering(wa: WhatsAppClient, to: str) -> None:
+    """Continue on same train — no train number / naam / seat again (15 min window)."""
+    _set_user(to)
+    sess = get_session(to)
+
+    if not sess.has_active_journey():
+        await wa.send_text(
+            to,
+            "⏱️ Session expire ho gaya (15 min). Naya order ke liye train number bhejein.",
+        )
+        await send_train_prompt(wa, to)
+        return
+
+    sess.touch_journey()
+    sess.flow_step = FlowStep.ORDERING
+    # Fresh browse — don't reopen last category (e.g. water after user wants thali)
+    sess.category_id = None
+    sess.category_name = None
+
+    seat = f" · Coach {sess.coach}/{sess.berth}" if sess.coach and sess.berth else ""
+    await wa.send_text(
+        to,
+        f"🚂 Train *{sess.train_number}* · {sess.vendor_name}\n"
+        f"👤 {sess.passenger_name or 'Guest'}{seat}\n",
+    )
+    await send_smart_order_prompt(wa, to)
+    await send_category_list(wa, to)
 
 
 async def handle_train_lookup(wa: WhatsAppClient, to: str, train_number: str) -> None:
@@ -188,15 +234,26 @@ async def send_category_list(wa: WhatsAppClient, to: str) -> None:
 
     categories = result.get("categories") or []
     sess = get_session(to)
+    menu = train_tools.browse_menu()
+    item_counts: dict[str, int] = {}
+    for p in (menu.get("portions") or []):
+        cid = p.get("category_id") or ""
+        item_counts[cid] = item_counts.get(cid, 0) + 1
+
     rows = []
     for c in categories[:10]:
-        ft = c.get("food_type", "")
-        hint = "Veg" if ft == "veg" else ("Non-veg" if ft == "non_veg" else "")
+        cid = str(c.get("id", ""))
+        n = item_counts.get(cid, 0)
+        desc = (c.get("description") or "").strip()
+        if not desc and n > 0:
+            desc = f"{n} items"
+        elif not desc:
+            desc = "Menu"
         rows.append(
             {
-                "id": f"{CAT_PREFIX}{c['id']}",
+                "id": f"{CAT_PREFIX}{cid}",
                 "title": _clip(c.get("name", "Category"), 24),
-                "description": _clip(hint or "Menu", 72),
+                "description": _clip(desc, 72),
             }
         )
 
@@ -225,6 +282,7 @@ async def confirm_seat_and_categories(wa: WhatsAppClient, to: str, coach: str, b
         to,
         f"✅ Seat *Coach {coach} · {berth}* confirm ho gaya.\n",
     )
+    await send_smart_order_prompt(wa, to)
     await send_category_list(wa, to)
 
 
@@ -246,37 +304,121 @@ def _portion_body(p: dict) -> str:
 
 
 async def _send_portion_card(wa: WhatsAppClient, to: str, p: dict) -> None:
-    """One menu item card: image + Add buttons."""
+    """One menu item card: optional image + Add buttons."""
     pid = p["menu_portion_id"]
     image_url = resolve_menu_image_url(p.get("image_url"))
     body = _portion_body(p)
+    buttons = [
+        (f"{TRAIN_ADD1_PREFIX}{pid}", "Add 1"),
+        (f"{TRAIN_ADD2_PREFIX}{pid}", "Add 2"),
+        (MENU_TRAIN_CART, "Cart"),
+    ]
+    footer = p.get("portion_label", "")[:60]
     try:
-        await wa.send_buttons(
-            to,
-            body,
-            [
-                (f"{TRAIN_ADD1_PREFIX}{pid}", "Add 1"),
-                (f"{TRAIN_ADD2_PREFIX}{pid}", "Add 2"),
-                (MENU_TRAIN_CART, "Cart"),
-            ],
-            header_image_url=image_url,
-            footer=p.get("portion_label", "")[:60],
-        )
+        if image_url:
+            await wa.send_buttons(
+                to, body, buttons, header_image_url=image_url, footer=footer
+            )
+        else:
+            await wa.send_buttons(
+                to, body, buttons, header=_clip(p["item_name"], 60), footer=footer
+            )
     except Exception:
-        logger.exception("Image card failed for %s, sending image + text", pid)
-        await wa.send_image(to, image_url, caption=_portion_body(p)[:1024])
-        await wa.send_buttons(
-            to,
-            "Add to cart:",
-            [
-                (f"{TRAIN_ADD1_PREFIX}{pid}", "Add 1"),
-                (f"{TRAIN_ADD2_PREFIX}{pid}", "Add 2"),
-                (MENU_TRAIN_CART, "Cart"),
-            ],
+        logger.exception("Image card failed for %s", pid)
+        if image_url:
+            await wa.send_image(to, image_url, caption=_portion_body(p)[:1024])
+        await wa.send_buttons(to, "Add to cart:", buttons)
+
+
+async def send_menu_list(
+    wa: WhatsAppClient,
+    to: str,
+    *,
+    page: int = 0,
+    portions: list[dict] | None = None,
+    list_intro: str | None = None,
+) -> None:
+    """Compact list of all items (default) — scales to 50–100+ with pages."""
+    _set_user(to)
+
+    if portions is None:
+        result = train_tools.browse_menu()
+        if result.get("status") == "error":
+            await wa.send_text(to, f"❌ {result.get('message')}")
+            return
+        portions = result.get("portions") or []
+    if not portions:
+        await wa.send_text(to, "Is category mein abhi koi item nahi hai.")
+        await send_category_list(wa, to)
+        return
+
+    total = len(portions)
+    per = MENU_LIST_ITEMS_PER_PAGE
+    start = page * per
+    end = min(start + per, total)
+    if start >= total:
+        page = 0
+        start = 0
+        end = min(per, total)
+
+    chunk = portions[start:end]
+    sess = get_session(to)
+    sess.menu_list_page = page
+    seat = f" · Coach {sess.coach}/{sess.berth}" if sess.coach and sess.berth else ""
+
+    rows = [
+        {
+            "id": f"{PORTION_PREFIX}{p['menu_portion_id']}",
+            "title": _clip(f"{p['item_name']}", 24),
+            "description": _clip(
+                f"{_veg_badge(p.get('is_veg', True))} {p['portion_label']} · ₹{p['price_inr']:.0f}",
+                72,
+            ),
+        }
+        for p in chunk
+    ]
+
+    if page == 0:
+        intro = list_intro or (
+            f"🍽️ *Step 5 — Menu*\n\n"
+            f"*{sess.category_name or 'Menu'}* · Train {sess.train_number}\n"
+            f"🏪 {sess.vendor_name}{seat}\n\n"
+            f"*{total}* items — neeche list se choose karein.\n"
+            f"_Photos: *show image*_ · _Search: type item name_"
         )
+        await wa.send_text(to, intro)
+
+    await wa.send_list(
+        to,
+        f"Items {start + 1}–{end} of {total} — tap to add:",
+        "Select item",
+        [{"title": _clip(sess.category_name or "Menu", 24), "rows": rows}],
+        header="Menu",
+        footer=f"Page {page + 1}",
+    )
+
+    nav: list[tuple[str, str]] = []
+    if end < total:
+        nav.append((f"{MENU_LIST_PAGE_PREFIX}{page + 1}", "More items"))
+    if page > 0:
+        nav.append((f"{MENU_LIST_PAGE_PREFIX}{page - 1}", "Previous"))
+    nav.append((MENU_SHOW_IMAGES, "Show images"))
+
+    await wa.send_buttons(
+        to,
+        f"List: {start + 1}–{end} / {total}",
+        nav[:3],
+        footer="Photos optional",
+    )
+    await wa.send_buttons(
+        to,
+        "Cart / order:",
+        [(MENU_TRAIN_CART, "View cart"), (MENU_TRAIN_CHECKOUT, "Place order")],
+    )
 
 
-async def send_menu_list(wa: WhatsAppClient, to: str, *, page: int = 0) -> None:
+async def send_menu_images(wa: WhatsAppClient, to: str, *, page: int | None = None) -> None:
+    """Photo cards — only when user taps Show images or types show image."""
     _set_user(to)
     result = train_tools.browse_menu()
     if result.get("status") == "error":
@@ -285,57 +427,46 @@ async def send_menu_list(wa: WhatsAppClient, to: str, *, page: int = 0) -> None:
 
     portions = result.get("portions") or []
     if not portions:
-        await wa.send_text(to, "Is category mein abhi koi item nahi hai.")
-        await send_category_list(wa, to)
+        await wa.send_text(to, "Is category mein koi item nahi.")
         return
 
+    if page is None:
+        page = get_session(to).menu_list_page
+
     total = len(portions)
-    start = page * MENU_ITEMS_PER_PAGE
-    end = min(start + MENU_ITEMS_PER_PAGE, total)
+    per = MENU_IMAGE_ITEMS_PER_PAGE
+    start = page * per
+    end = min(start + per, total)
     if start >= total:
         page = 0
         start = 0
-        end = min(MENU_ITEMS_PER_PAGE, total)
+        end = min(per, total)
 
     chunk = portions[start:end]
     sess = get_session(to)
-    seat = f" · Coach {sess.coach}/{sess.berth}" if sess.coach and sess.berth else ""
 
-    if page == 0:
-        await wa.send_text(
-            to,
-            f"🍽️ *Step 5 — Menu*\n\n"
-            f"*{sess.category_name or 'Menu'}* · Train {sess.train_number}\n"
-            f"🏪 {sess.vendor_name}{seat}\n\n"
-            f"Neeche *{total}* item(s) — photo ke saath. Seedha *Add* dabayein 👇",
-        )
-    else:
-        await wa.send_text(to, f"📸 Aur items ({start + 1}–{end} of {total}):")
+    await wa.send_text(
+        to,
+        f"📸 *Photos* ({start + 1}–{end} of {total})\n"
+        f"_Wapas list ke liye koi bhi item list se choose karein._",
+    )
 
     for p in chunk:
         await _send_portion_card(wa, to, p)
 
     nav: list[tuple[str, str]] = []
     if end < total:
-        nav.append((f"{MENU_PAGE_PREFIX}{page + 1}", "More items"))
+        nav.append((f"{MENU_IMAGE_PAGE_PREFIX}{page + 1}", "More photos"))
     if page > 0:
-        nav.append((f"{MENU_PAGE_PREFIX}{page - 1}", "Previous"))
-    nav.append((MENU_TRAIN_CART, "View cart"))
+        nav.append((f"{MENU_IMAGE_PAGE_PREFIX}{page - 1}", "Back"))
+    nav.append((f"{MENU_LIST_PAGE_PREFIX}{page}", "Back to list"))
 
-    await wa.send_buttons(
-        to,
-        f"Items {start + 1}–{end} of {total} — aur dekhein ya cart:",
-        nav[:3],
-        footer="Tap Add on each photo above",
-    )
-    await wa.send_buttons(
-        to,
-        "Order place karein:",
-        [(MENU_TRAIN_CHECKOUT, "Place order"), (MENU_HOME, "Main menu")],
-    )
+    await wa.send_buttons(to, "Photos:", nav[:3])
 
 
-async def send_portion_actions(wa: WhatsAppClient, to: str, portion_id: str) -> None:
+async def send_portion_actions(
+    wa: WhatsAppClient, to: str, portion_id: str, *, with_image: bool = False
+) -> None:
     _set_user(to)
     result = train_tools.browse_menu()
     portion = next(
@@ -346,23 +477,43 @@ async def send_portion_actions(wa: WhatsAppClient, to: str, portion_id: str) -> 
         await wa.send_text(to, "Item not found.")
         return
 
-    await _send_portion_card(wa, to, portion)
+    if with_image:
+        await _send_portion_card(wa, to, portion)
+        return
+
+    pid = portion["menu_portion_id"]
+    await wa.send_buttons(
+        to,
+        _portion_body(portion),
+        [
+            (f"{TRAIN_ADD1_PREFIX}{pid}", "Add 1"),
+            (f"{TRAIN_ADD2_PREFIX}{pid}", "Add 2"),
+            (f"{ITEM_PHOTO_PREFIX}{pid}", "Show photo"),
+        ],
+        header=_clip(portion["item_name"], 60),
+        footer=f"₹{portion['price_inr']:.0f}",
+    )
 
 
 async def send_train_cart(wa: WhatsAppClient, to: str) -> None:
     _set_user(to)
     sess = get_session(to)
 
-    if not sess.train_number and not sess.pnr:
+    if not sess.train_number:
         await send_train_prompt(wa, to)
         return
 
     cart = train_tools.view_train_cart()
     if cart.get("empty"):
+        more_btn = (
+            (MENU_ADD_MORE, "Browse menu")
+            if sess.has_active_journey()
+            else (MENU_TRAIN_ORDER, "Order food")
+        )
         await wa.send_buttons(
             to,
             "Cart khali hai 🛒\n\nPehle menu se items add karein.",
-            [(MENU_TRAIN_ORDER, "Order food"), (MENU_HOME, "Main menu")],
+            [more_btn, (MENU_HOME, "Main menu")],
         )
         if sess.flow_step == FlowStep.ORDERING:
             await send_menu_list(wa, to)
@@ -379,7 +530,7 @@ async def send_train_cart(wa: WhatsAppClient, to: str) -> None:
         f"🛒 *Your cart*\n*{header}*\n\n{body}",
         [
             (MENU_TRAIN_CHECKOUT, "Place order"),
-            (MENU_TRAIN_ORDER, "Add more"),
+            (MENU_ADD_MORE, "Add more"),
             (MENU_HOME, "Main menu"),
         ],
         header="Cart",
@@ -402,7 +553,7 @@ async def send_orders_summary(wa: WhatsAppClient, to: str) -> None:
         oid = str(o.get("order_id", ""))[:8]
         lines.append(
             f"#{oid}… — ₹{o['total_inr']:.2f} ({o['status']})"
-            + (f" · {o['station']}" if o.get("station") else "")
+            + (f" · Train {o.get('pnr')}" if o.get("pnr") else "")
         )
     await wa.send_text(to, "*Recent orders*\n\n" + "\n".join(lines))
     await wa.send_buttons(to, "Options:", [(MENU_HOME, "Main menu")])
@@ -459,6 +610,7 @@ async def handle_checkout(wa: WhatsAppClient, to: str) -> None:
 
 async def handle_interactive(wa: WhatsAppClient, to: str, reply_id: str) -> None:
     _set_user(to)
+    get_session(to).touch_journey()
     logger.info("Train interactive from %s: %s", to, reply_id)
 
     if reply_id == MENU_HOME:
@@ -466,6 +618,9 @@ async def handle_interactive(wa: WhatsAppClient, to: str, reply_id: str) -> None
         return
     if reply_id == MENU_TRAIN_ORDER:
         await send_train_prompt(wa, to)
+        return
+    if reply_id == MENU_ADD_MORE:
+        await resume_ordering(wa, to)
         return
     if reply_id == MENU_TRAIN_CART:
         await send_train_cart(wa, to)
@@ -477,12 +632,28 @@ async def handle_interactive(wa: WhatsAppClient, to: str, reply_id: str) -> None
         await handle_checkout(wa, to)
         return
 
-    if reply_id.startswith(MENU_PAGE_PREFIX):
+    if reply_id == MENU_SHOW_IMAGES:
+        await send_menu_images(wa, to)
+        return
+
+    if reply_id.startswith(MENU_LIST_PAGE_PREFIX):
         try:
-            page = int(reply_id[len(MENU_PAGE_PREFIX) :])
+            page = int(reply_id[len(MENU_LIST_PAGE_PREFIX) :])
         except ValueError:
             page = 0
         await send_menu_list(wa, to, page=page)
+        return
+
+    if reply_id.startswith(MENU_IMAGE_PAGE_PREFIX):
+        try:
+            page = int(reply_id[len(MENU_IMAGE_PAGE_PREFIX) :])
+        except ValueError:
+            page = 0
+        await send_menu_images(wa, to, page=page)
+        return
+
+    if reply_id.startswith(ITEM_PHOTO_PREFIX):
+        await send_portion_actions(wa, to, reply_id[len(ITEM_PHOTO_PREFIX) :], with_image=True)
         return
 
     if reply_id.startswith(CAT_PREFIX):
@@ -531,6 +702,13 @@ def wants_order(text: str) -> bool:
     return t in ORDER_TRIGGERS or "order food" in t or "khana" in t
 
 
+def wants_show_images(text: str) -> bool:
+    t = _normalize(text)
+    return t in SHOW_IMAGE_TRIGGERS or (
+        ("image" in t or "photo" in t or "pic" in t) and ("dikha" in t or "show" in t)
+    )
+
+
 def extract_train_number(text: str) -> str | None:
     m = TRAIN_NUMBER_PATTERN.search(text.replace(" ", ""))
     return m.group(1) if m else None
@@ -559,11 +737,11 @@ async def _prompt_for_current_step(wa: WhatsAppClient, to: str) -> None:
         )
         return
     if sess.flow_step == FlowStep.AWAITING_CATEGORY:
-        await wa.send_text(to, "🍽️ Neeche wali *category list* se choose karein.")
+        await send_smart_order_prompt(wa, to)
         await send_category_list(wa, to)
         return
     if sess.flow_step == FlowStep.ORDERING:
-        await wa.send_text(to, "🍽️ Menu se item choose karein ya cart dekhein.")
+        await send_smart_order_prompt(wa, to)
         await send_menu_list(wa, to)
         return
     await send_train_prompt(wa, to)
@@ -573,13 +751,18 @@ async def handle_text(wa: WhatsAppClient, to: str, text: str, runner) -> None:
     """Guided ordering: train → name → seat → category → menu."""
     _set_user(to)
     sess = get_session(to)
+    if sess.has_active_journey():
+        sess.touch_journey()
 
     if wants_menu(text):
         await send_main_menu(wa, to)
         return
 
     if wants_order(text):
-        await send_train_prompt(wa, to)
+        if sess.has_active_journey():
+            await resume_ordering(wa, to)
+        else:
+            await send_train_prompt(wa, to)
         return
 
     if _normalize(text) in {"cart", "my cart", "mera cart"}:
@@ -619,12 +802,43 @@ async def handle_text(wa: WhatsAppClient, to: str, text: str, runner) -> None:
         await confirm_seat_and_categories(wa, to, seat[0], seat[1])
         return
 
+    if sess.flow_step == FlowStep.ORDERING and wants_show_images(text):
+        await send_menu_images(wa, to)
+        return
+
+    # Natural language: "paneer thali chahiye", "2 chai", etc.
+    if sess.has_active_journey() and looks_like_food_order(text):
+        handled = await handle_food_message(
+            wa,
+            to,
+            text,
+            send_menu_list_fn=send_menu_list,
+            send_portion_actions_fn=send_portion_actions,
+            send_category_list_fn=send_category_list,
+        )
+        if handled:
+            return
+
     # Mid-flow: keep user on guided path
     if sess.flow_step != FlowStep.IDLE:
         await _prompt_for_current_step(wa, to)
         return
 
-    # Idle: optional AI for questions; otherwise start with train number
+    # Idle but active journey — ask what they want, don't replay old category list only
+    if sess.has_active_journey():
+        if looks_like_food_order(text):
+            await handle_food_message(
+                wa,
+                to,
+                text,
+                send_menu_list_fn=send_menu_list,
+                send_portion_actions_fn=send_portion_actions,
+                send_category_list_fn=send_category_list,
+            )
+        else:
+            await resume_ordering(wa, to)
+        return
+
     train_num = extract_train_number(text)
     if train_num:
         await handle_train_lookup(wa, to, train_num)

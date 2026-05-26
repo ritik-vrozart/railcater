@@ -148,6 +148,9 @@ export interface OrderItem {
   line_total_cents: number
 }
 
+export type PaymentStatus = 'pending' | 'paid'
+export type PaymentMethod = 'cash' | 'upi'
+
 export interface Order {
   id: string
   tenant_id: string
@@ -161,8 +164,6 @@ export interface Order {
   pnr?: string
   train_number?: string
   train_name?: string
-  station_code?: string
-  station_name?: string
   vendor_id?: string
   vendor_name?: string
   coach?: string
@@ -171,6 +172,9 @@ export interface Order {
   delivery_window_start?: string
   delivery_window_end?: string
   delivery_notified_at?: string
+  expected_delivery_at?: string
+  payment_status?: PaymentStatus
+  payment_method?: PaymentMethod
   customer_phone?: string
   items?: OrderItem[]
   created_at: string

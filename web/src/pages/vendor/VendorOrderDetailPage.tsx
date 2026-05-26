@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { OrderDeliverySchedule } from '../../components/vendor/OrderDeliverySchedule'
+import { OrderPayment } from '../../components/vendor/OrderPayment'
 import { OrderStatusWorkflow } from '../../components/vendor/OrderStatusWorkflow'
 import { Card, CardHeader } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -105,15 +106,23 @@ export function VendorOrderDetailPage() {
 
           <Card>
             <CardHeader
-              title="Schedule delivery"
-              description="Customer gets WhatsApp when you save (e.g. delivered by 10 PM)"
+              title="Delivery time"
+              description="Kitne baje tak khana seat par pahunchega — customer ko WhatsApp"
             />
             <OrderDeliverySchedule order={order} onUpdated={reload} />
           </Card>
 
+          <Card>
+            <CardHeader
+              title="Payment"
+              description="Mark pending / paid — Cash ya UPI"
+            />
+            <OrderPayment order={order} onUpdated={reload} />
+          </Card>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Delivery & journey" />
+              <CardHeader title="Passenger & train" />
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between gap-4">
                   <dt className="text-gray-500">Status</dt>
@@ -122,8 +131,12 @@ export function VendorOrderDetailPage() {
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">PNR</dt>
-                  <dd className="font-medium text-gray-900">{order.pnr ?? '—'}</dd>
+                  <dt className="text-gray-500">Payment</dt>
+                  <dd className="font-medium capitalize text-gray-900">
+                    {order.payment_status === 'paid'
+                      ? `Paid (${order.payment_method ?? '—'})`
+                      : 'Pending'}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-gray-500">Passenger</dt>
@@ -144,11 +157,13 @@ export function VendorOrderDetailPage() {
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">Delivery window</dt>
+                  <dt className="text-gray-500">Khana kab tak</dt>
                   <dd className="text-right text-gray-900">
-                    {order.delivery_window_start && order.delivery_window_end
-                      ? `${formatDate(order.delivery_window_start)} – ${formatDate(order.delivery_window_end)}`
-                      : '—'}
+                    {order.expected_delivery_at
+                      ? formatDate(order.expected_delivery_at)
+                      : order.delivery_window_start
+                        ? formatDate(order.delivery_window_start)
+                        : '—'}
                   </dd>
                 </div>
               </dl>

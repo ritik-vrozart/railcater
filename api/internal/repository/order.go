@@ -98,6 +98,7 @@ func (r *OrderRepository) List(ctx context.Context, tenantID uuid.UUID, page, pe
 		       o.vendor_id, v.name,
 		       o.coach, o.berth, o.passenger_name,
 		       o.delivery_window_start, o.delivery_window_end, o.delivery_notified_at,
+		       o.expected_delivery_at, COALESCE(o.payment_status, 'pending'), o.payment_method,
 		       o.created_at, o.updated_at
 		FROM orders o
 		LEFT JOIN customers c ON c.id = o.customer_id
@@ -135,6 +136,7 @@ func (r *OrderRepository) GetByID(ctx context.Context, tenantID, id uuid.UUID) (
 		       o.vendor_id, v.name,
 		       o.coach, o.berth, o.passenger_name,
 		       o.delivery_window_start, o.delivery_window_end, o.delivery_notified_at,
+		       o.expected_delivery_at, COALESCE(o.payment_status, 'pending'), o.payment_method,
 		       o.created_at, o.updated_at
 		FROM orders o
 		LEFT JOIN customers c ON c.id = o.customer_id
@@ -264,12 +266,35 @@ func (r *OrderRepository) UpdateDeliverySchedule(
 		UPDATE orders SET
 			delivery_window_start = $3,
 			delivery_window_end = $4,
+			expected_delivery_at = $3,
 			updated_at = now()
 			%s
 		WHERE tenant_id = $1 AND id = $2
 	`, notifiedClause)
 
 	tag, err := r.pool.Exec(ctx, q, tenantID, id, start, end)
+	if err != nil {
+		return models.Order{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return models.Order{}, apperror.ErrNotFound
+	}
+	return r.GetByID(ctx, tenantID, id)
+}
+
+func (r *OrderRepository) UpdatePayment(
+	ctx context.Context,
+	tenantID, id uuid.UUID,
+	paymentStatus string,
+	paymentMethod *string,
+) (models.Order, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE orders SET
+			payment_status = $3,
+			payment_method = $4,
+			updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id, paymentStatus, paymentMethod)
 	if err != nil {
 		return models.Order{}, err
 	}
@@ -354,6 +379,7 @@ func scanOrderSummary(row pgx.Row) (models.Order, error) {
 		&o.VendorID, &o.VendorName,
 		&o.Coach, &o.Berth, &o.PassengerName,
 		&o.DeliveryWindowStart, &o.DeliveryWindowEnd, &o.DeliveryNotifiedAt,
+		&o.ExpectedDeliveryAt, &o.PaymentStatus, &o.PaymentMethod,
 		&o.CreatedAt, &o.UpdatedAt,
 	)
 	return o, err

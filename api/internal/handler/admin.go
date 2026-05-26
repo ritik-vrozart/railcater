@@ -190,7 +190,6 @@ func (s *Server) InvitePantry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.Internal(err))
 		return
 	}
-	_ = s.vendors.LinkStationsFromTrain(r.Context(), vendor.ID, train.ID)
 
 	u, err := s.users.Create(r.Context(), repository.CreateUserInput{
 		TenantID:     s.tenantID,

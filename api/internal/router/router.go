@@ -70,19 +70,15 @@ func New(cfg config.Config, pool *pgxpool.Pool) http.Handler {
 			r.Get("/pantries/{id}", api.GetPantry)
 		})
 
-		// PNR & trains
-		r.Get("/pnr/{pnr}", api.LookupPNR)
-		r.Get("/stations", api.ListStations)
+		// Trains (no station / PNR flow)
 		r.Get("/trains", api.ListTrains)
 		r.Get("/trains/number/{number}", api.GetTrainByNumber)
 		r.Get("/trains/{id}", api.GetTrain)
-		r.Get("/trains/{id}/stations", api.GetTrainStations)
 		r.Patch("/trains/{id}/delay", api.UpdateTrainDelay)
 
 		// Vendors & menu
 		r.Get("/vendors", api.ListVendors)
 		r.Get("/vendors/{id}", api.GetVendor)
-		r.Get("/stations/{stationId}/vendors", api.ListStationVendors)
 		r.Get("/vendors/{vendorId}/menu", api.ListVendorMenu)
 		r.With(authMW).Post("/vendors/{vendorId}/menu", api.CreateMenuItem)
 		r.With(authMW).Put("/vendors/{vendorId}/menu/{itemId}", api.UpdateMenuItem)
@@ -110,13 +106,12 @@ func New(cfg config.Config, pool *pgxpool.Pool) http.Handler {
 		// Orders
 		r.Get("/orders", api.ListOrders)
 		r.Post("/orders", api.CreateOrder)
-		r.Post("/orders/train", api.CreateTrainOrder)
 		r.Post("/orders/train/whatsapp", api.CreateWhatsAppTrainOrder)
-		r.Post("/orders/validate-delivery", api.ValidateDelivery)
 		r.Post("/orders/whatsapp", api.CreateWhatsAppOrder)
 		r.Get("/orders/{id}", api.GetOrder)
 		r.With(authMW).Patch("/orders/{id}/status", api.UpdateOrderStatus)
 		r.With(authMW).Patch("/orders/{id}/delivery", api.UpdateOrderDelivery)
+		r.With(authMW).Patch("/orders/{id}/payment", api.UpdateOrderPayment)
 
 		r.Post("/inventory/check", api.CheckStock)
 	})

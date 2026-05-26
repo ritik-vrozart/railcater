@@ -24,8 +24,9 @@ export function OrderDeliverySchedule({
   onUpdated: () => void
 }) {
   const { token } = useAuth()
-  const [start, setStart] = useState(toDatetimeLocal(order.delivery_window_start))
-  const [end, setEnd] = useState(toDatetimeLocal(order.delivery_window_end))
+  const initial =
+    order.expected_delivery_at || order.delivery_window_start || ''
+  const [at, setAt] = useState(toDatetimeLocal(initial))
   const [notify, setNotify] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -33,7 +34,7 @@ export function OrderDeliverySchedule({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    if (!token || !start) return
+    if (!token || !at) return
     setSaving(true)
     setError(null)
     setMessage(null)
@@ -43,14 +44,17 @@ export function OrderDeliverySchedule({
         {
           method: 'PATCH',
           body: JSON.stringify({
-            delivery_window_start: fromDatetimeLocal(start),
-            delivery_window_end: end ? fromDatetimeLocal(end) : undefined,
+            expected_delivery_at: fromDatetimeLocal(at),
             notify_customer: notify,
           }),
         },
         token,
       )
-      setMessage(notify ? 'Saved — customer notified on WhatsApp.' : 'Delivery time saved.')
+      setMessage(
+        notify
+          ? 'Saved — customer ko WhatsApp par time bhej diya.'
+          : 'Delivery time save ho gaya.',
+      )
       onUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
@@ -62,8 +66,8 @@ export function OrderDeliverySchedule({
   return (
     <form onSubmit={handleSave} className="space-y-4">
       <p className="text-sm text-gray-600">
-        Set when food will reach the passenger. Saving sends a WhatsApp message like
-        &quot;Your order will be delivered by 10 PM&quot;.
+        Passenger ko batayein <strong>kitne baje tak khana seat par milega</strong> (coach{' '}
+        {order.coach}/{order.berth}).
       </p>
 
       {order.customer_phone ? (
@@ -74,30 +78,19 @@ export function OrderDeliverySchedule({
             : null}
         </p>
       ) : (
-        <p className="text-sm text-amber-700">No customer phone — WhatsApp notify will be skipped.</p>
+        <p className="text-sm text-amber-700">No customer phone — WhatsApp notify skip hoga.</p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block text-sm">
-          <span className="font-medium text-gray-700">Delivery from</span>
-          <input
-            type="datetime-local"
-            required
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="font-medium text-gray-700">Delivery until (optional)</span>
-          <input
-            type="datetime-local"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
-        </label>
-      </div>
+      <label className="block text-sm">
+        <span className="font-medium text-gray-700">Khana kab tak milega?</span>
+        <input
+          type="datetime-local"
+          required
+          value={at}
+          onChange={(e) => setAt(e.target.value)}
+          className="mt-1 w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+      </label>
 
       <label className="flex items-center gap-2 text-sm text-gray-700">
         <input
@@ -106,7 +99,7 @@ export function OrderDeliverySchedule({
           onChange={(e) => setNotify(e.target.checked)}
           className="rounded border-gray-300 text-orange-600"
         />
-        Notify customer on WhatsApp
+        Customer ko WhatsApp par bhejein
       </label>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

@@ -1,6 +1,6 @@
 """
 WhatsApp train food bot — FastAPI + Google ADK (Gemini).
-Orders flow through the Go backend API (PNR, vendors, menu, train orders).
+Orders flow through the Go backend API (train number → pantry menu → orders).
 """
 
 from __future__ import annotations
@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     if settings.google_api_key:
         os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+    if not settings.api_base_url.strip():
+        logger.warning("API_BASE_URL is not set in agent/.env")
+    if not settings.public_base_url.strip():
+        logger.warning("PUBLIC_BASE_URL is not set in agent/.env (required for WhatsApp webhook/shop)")
     try:
         await ensure_token_ready()
     except Exception as exc:

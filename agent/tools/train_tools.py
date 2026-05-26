@@ -93,6 +93,7 @@ def lookup_train(number: str) -> dict[str, Any]:
     sess.vendor_id = str(pantry.get("id", ""))
     sess.vendor_name = pantry.get("name", "")
     sess.flow_step = FlowStep.AWAITING_NAME
+    sess.touch_journey()
 
     return {
         "status": "success",
@@ -120,170 +121,12 @@ def set_passenger_name(name: str) -> dict[str, Any]:
 
     sess.passenger_name = name
     sess.flow_step = FlowStep.AWAITING_SEAT
+    sess.touch_journey()
     ensure_whatsapp_customer(name=name)
     return {
         "status": "success",
         "passenger_name": name,
         "message": f"Namaste {name}! Ab apna coach aur seat number bhejein.",
-    }
-
-
-def get_stops_with_vendors() -> dict[str, Any]:
-    """For each stop on the loaded PNR route, list vendors serving that station."""
-    sess = _session()
-    if not sess.pnr_lookup:
-        return {"status": "error", "message": "No PNR loaded. Call lookup_pnr first."}
-
-    stops_out: list[dict[str, Any]] = []
-    for s in sess.pnr_lookup.get("available_stops") or []:
-        sid = str(s.get("station_id", ""))
-        try:
-            vendors = api_client.list_station_vendors(sid) if sid else []
-        except api_client.APIError:
-            vendors = []
-        stops_out.append(
-            {
-                "station_id": sid,
-                "station_code": s.get("station_code"),
-                "station_name": s.get("station_name"),
-                "stop_order": s.get("stop_order"),
-                "vendor_count": len(vendors),
-                "vendors": [{"id": v["id"], "name": v.get("name"), "code": v.get("code")} for v in vendors],
-            }
-        )
-
-    return {"status": "success", "pnr": sess.pnr, "stops": stops_out}
-
-
-def lookup_pnr(pnr: str) -> dict[str, Any]:
-    """
-    Look up a 10-digit railway PNR and load journey details (train, passenger, stops).
-
-    Args:
-        pnr: 10-digit PNR number.
-
-    Returns:
-        status, passenger, train, from/to stations, available_stops, message
-    """
-    pnr = re.sub(r"\D", "", pnr.strip())
-    if len(pnr) != 10:
-        return {"status": "error", "message": "PNR must be exactly 10 digits."}
-
-    try:
-        data = api_client.lookup_pnr(pnr)
-    except api_client.APIError as exc:
-        return {"status": "error", "message": str(exc)}
-
-    from store.session import FlowStep
-
-    sess = _session()
-    sess.reset_journey()
-    sess.pnr = pnr
-    sess.pnr_lookup = data
-    sess.awaiting_pnr = False
-    sess.flow_step = FlowStep.AWAITING_STATION
-
-    train = data.get("train", {})
-    stops = data.get("available_stops", [])
-    stop_rows = [
-        {
-            "station_id": s.get("station_id"),
-            "code": s.get("station_code"),
-            "name": s.get("station_name"),
-            "stop_order": s.get("stop_order"),
-        }
-        for s in stops
-    ]
-
-    return {
-        "status": "success",
-        "pnr": pnr,
-        "passenger_name": data.get("passenger_name"),
-        "coach": data.get("coach"),
-        "berth": data.get("berth"),
-        "journey_date": data.get("journey_date"),
-        "train_number": train.get("number"),
-        "train_name": train.get("name"),
-        "from_station": data.get("from_station", {}).get("name"),
-        "to_station": data.get("to_station", {}).get("name"),
-        "available_stops": stop_rows,
-        "message": (
-            f"PNR {pnr} — {data.get('passenger_name')} on {train.get('number')} {train.get('name')}. "
-            f"{len(stop_rows)} delivery stop(s) available. Use select_delivery_station next."
-        ),
-    }
-
-
-def select_delivery_station(station_id: str) -> dict[str, Any]:
-    """
-    Choose delivery station for the loaded PNR and validate delivery window.
-
-    Args:
-        station_id: UUID of the station from available_stops.
-    """
-    sess = _session()
-    if not sess.pnr:
-        return {"status": "error", "message": "No PNR loaded. Call lookup_pnr first."}
-
-    try:
-        result = api_client.validate_delivery(sess.pnr, station_id.strip())
-    except api_client.APIError as exc:
-        return {"status": "error", "message": str(exc)}
-
-    dw = result.get("delivery_window", {})
-    if not dw.get("feasible", True):
-        return {
-            "status": "error",
-            "message": dw.get("feasibility_message", "Delivery not feasible at this station."),
-        }
-
-    from store.session import FlowStep
-
-    sess.station_id = station_id.strip()
-    sess.station_name = dw.get("station_name") or dw.get("station_code", "")
-    sess.delivery_window = dw
-    sess.vendor_id = None
-    sess.vendor_name = None
-    sess.clear_cart()
-    sess.flow_step = FlowStep.AWAITING_VENDOR
-
-    return {
-        "status": "success",
-        "station_id": sess.station_id,
-        "station_name": sess.station_name,
-        "delivery_window_start": dw.get("delivery_window_start"),
-        "delivery_window_end": dw.get("delivery_window_end"),
-        "message": f"Delivery at {sess.station_name} is available. Call list_vendors_at_station next.",
-    }
-
-
-def list_vendors_at_station() -> dict[str, Any]:
-    """List food vendors serving the selected delivery station."""
-    sess = _session()
-    if not sess.station_id:
-        return {"status": "error", "message": "No station selected. Call select_delivery_station first."}
-
-    try:
-        vendors = api_client.list_station_vendors(sess.station_id)
-    except api_client.APIError as exc:
-        return {"status": "error", "message": str(exc)}
-
-    if not vendors:
-        return {
-            "status": "success",
-            "count": 0,
-            "vendors": [],
-            "message": "No vendors at this station yet.",
-        }
-
-    rows = [{"id": v["id"], "name": v["name"], "code": v.get("code")} for v in vendors]
-    lines = [f"  {v['name']} (id={v['id']})" for v in vendors]
-    return {
-        "status": "success",
-        "count": len(rows),
-        "vendors": rows,
-        "formatted_list": "\n".join(lines),
-        "message": f"{len(rows)} vendor(s) at {sess.station_name}. Use select_vendor with vendor id.",
     }
 
 
@@ -302,6 +145,7 @@ def set_delivery_seat(coach: str, berth: str) -> dict[str, Any]:
     sess.coach = coach
     sess.berth = berth
     sess.flow_step = FlowStep.AWAITING_CATEGORY
+    sess.touch_journey()
     return {
         "status": "success",
         "coach": coach,
@@ -325,6 +169,7 @@ def list_menu_categories() -> dict[str, Any]:
         {
             "id": str(c.get("id", "")),
             "name": c.get("name", ""),
+            "description": c.get("description", ""),
             "food_type": c.get("food_type", ""),
         }
         for c in cats
@@ -355,8 +200,8 @@ def select_category(category_id: str) -> dict[str, Any]:
 
     sess.category_id = category_id.strip()
     sess.category_name = cat.get("name", "")
-    sess.clear_cart()
     sess.flow_step = FlowStep.ORDERING
+    sess.touch_journey()
     return {
         "status": "success",
         "category_name": sess.category_name,
@@ -364,37 +209,136 @@ def select_category(category_id: str) -> dict[str, Any]:
     }
 
 
-def select_vendor(vendor_id: str) -> dict[str, Any]:
-    """Select vendor for ordering; loads their menu."""
+def _build_portions_index(
+    items: list[dict[str, Any]],
+    *,
+    category_filter: str | None = None,
+    veg_filter: str | None = None,
+    item_query: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    from services.food_intent import category_name_matches, score_item_match
+
+    portions_index: list[dict[str, Any]] = []
+    scored: list[tuple[float, dict[str, Any]]] = []
+
+    for item in items:
+        cat_name = str(item.get("category") or "")
+        if category_filter and str(item.get("category_id") or "") != category_filter:
+            continue
+        is_veg = bool(item.get("is_veg", True))
+        if veg_filter == "veg" and not is_veg:
+            continue
+        if veg_filter == "non_veg" and is_veg:
+            continue
+
+        for portion in item.get("portions") or []:
+            if not portion.get("is_active", True):
+                continue
+            row = {
+                "menu_portion_id": portion["id"],
+                "menu_item_id": str(item.get("id", "")),
+                "item_name": item.get("name"),
+                "item_description": item.get("description") or "",
+                "category_id": str(item.get("category_id") or ""),
+                "category_name": cat_name,
+                "portion_label": portion.get("label"),
+                "price_inr": _inr(int(portion.get("price_cents", 0))),
+                "stock": portion.get("stock_quantity", 0),
+                "image_url": item.get("image_url"),
+                "is_veg": is_veg,
+            }
+            if item_query:
+                sc = score_item_match(
+                    item_query,
+                    str(item.get("name", "")),
+                    str(item.get("description") or ""),
+                )
+                if sc < 0.3:
+                    continue
+                scored.append((sc, row))
+            else:
+                portions_index.append(row)
+
+    if item_query and scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        portions_index = [r for _, r in scored]
+
+    if limit and len(portions_index) > limit:
+        portions_index = portions_index[:limit]
+    return portions_index
+
+
+def search_menu(query: str, *, veg: str | None = None, limit: int = 10) -> dict[str, Any]:
+    """
+    Search full pantry menu by natural language (ignores current category).
+
+    Pass veg only for meal-type filters ("veg" | "non_veg").
+    Omit veg for water, drinks, snacks — they are not veg/non-veg categories.
+    """
     sess = _session()
-    if not sess.station_id:
-        return {"status": "error", "message": "Select a delivery station first."}
+    if not sess.vendor_id:
+        return {"status": "error", "message": "Pehle train number bhejein."}
 
     try:
-        vendors = api_client.list_station_vendors(sess.station_id)
+        items = api_client.get_vendor_menu(sess.vendor_id)
+        cats = api_client.list_menu_categories(sess.vendor_id)
     except api_client.APIError as exc:
         return {"status": "error", "message": str(exc)}
 
-    vendor = next((v for v in vendors if str(v.get("id")) == vendor_id.strip()), None)
-    if not vendor:
-        return {"status": "error", "message": f"Vendor {vendor_id} not found at this station."}
+    from services.food_intent import FoodIntent, category_name_matches, parse_food_intent
 
-    from store.session import FlowStep
+    intent = parse_food_intent(query) or FoodIntent(item_query=query, category_hints=[], veg_preference=veg, quantity=None)
+    # Only apply veg filter when caller passes veg (agent follows prompt rules).
+    veg_filter = veg
 
-    sess.vendor_id = vendor_id.strip()
-    sess.vendor_name = vendor.get("name", "")
-    sess.clear_cart()
-    sess.flow_step = FlowStep.AWAITING_SEAT
+    # Narrow by category hints
+    filtered_items = items
+    if intent.category_hints:
+        filtered_items = [
+            it
+            for it in items
+            if category_name_matches(intent.category_hints, str(it.get("category") or ""))
+        ]
+        if not filtered_items:
+            filtered_items = items
+
+    portions = _build_portions_index(
+        filtered_items,
+        veg_filter=veg_filter,
+        item_query=intent.item_query,
+        limit=limit,
+    )
+
+    if not portions and intent.category_hints:
+        portions = _build_portions_index(
+            items,
+            veg_filter=veg_filter,
+            item_query=intent.item_query,
+            limit=limit,
+        )
 
     return {
         "status": "success",
-        "vendor_id": sess.vendor_id,
-        "vendor_name": sess.vendor_name,
-        "message": "Vendor selected. Confirm delivery seat (coach/berth) next.",
+        "query": intent.item_query,
+        "category_hints": intent.category_hints,
+        "veg_preference": veg_filter,
+        "count": len(portions),
+        "portions": portions,
+        "categories": [
+            {"id": str(c["id"]), "name": c.get("name"), "food_type": c.get("food_type")}
+            for c in cats
+            if c.get("is_active", True)
+        ],
     }
 
 
-def browse_menu(*, category_id: str | None = None) -> dict[str, Any]:
+def browse_menu(
+    *,
+    category_id: str | None = None,
+    item_query: str | None = None,
+    veg_filter: str | None = None,
+) -> dict[str, Any]:
     """List menu items and portions for the selected vendor (optional category filter)."""
     sess = _session()
     if not sess.vendor_id:
@@ -410,26 +354,18 @@ def browse_menu(*, category_id: str | None = None) -> dict[str, Any]:
     if cat_filter:
         items = [it for it in items if str(it.get("category_id") or "") == cat_filter]
 
-    lines = []
-    portions_index: list[dict[str, Any]] = []
-    for item in items:
-        for portion in item.get("portions") or []:
-            if not portion.get("is_active", True):
-                continue
-            lines.append(_format_portion_row(item, portion))
-            portions_index.append(
-                {
-                    "menu_portion_id": portion["id"],
-                    "menu_item_id": str(item.get("id", "")),
-                    "item_name": item.get("name"),
-                    "item_description": item.get("description") or "",
-                    "portion_label": portion.get("label"),
-                    "price_inr": _inr(int(portion.get("price_cents", 0))),
-                    "stock": portion.get("stock_quantity", 0),
-                    "image_url": item.get("image_url"),
-                    "is_veg": bool(item.get("is_veg", True)),
-                }
-            )
+    portions_index = _build_portions_index(
+        items,
+        item_query=item_query,
+        veg_filter=veg_filter,
+    )
+    lines = [
+        _format_portion_row(
+            {"name": p["item_name"], "is_veg": p["is_veg"], "description": p.get("item_description")},
+            {"label": p["portion_label"], "price_cents": int(p["price_inr"] * 100), "stock_quantity": p["stock"], "id": p["menu_portion_id"]},
+        )
+        for p in portions_index
+    ]
 
     if not portions_index:
         return {"status": "success", "count": 0, "message": "Menu is empty for this vendor."}
@@ -501,6 +437,7 @@ def add_meal_to_cart(menu_portion_id: str, quantity: int = 1) -> dict[str, Any]:
             )
         )
 
+    sess.touch_journey()
     return {"status": "success", "message": f"Added {quantity}x {item.get('name')}.", **view_train_cart()}
 
 
@@ -519,9 +456,8 @@ def view_train_cart() -> dict[str, Any]:
         "empty": False,
         "cart_summary": "\n".join(lines) + f"\n\nTotal: ₹{_inr(sess.cart_total_cents):.2f}",
         "cart_total_inr": _inr(sess.cart_total_cents),
-        "pnr": sess.pnr or sess.train_number,
-        "station": sess.station_name,
         "train": sess.train_number,
+        "seat": f"{sess.coach}/{sess.berth}" if sess.coach and sess.berth else None,
         "vendor": sess.vendor_name,
     }
 
@@ -583,19 +519,8 @@ def place_train_order(notes: str | None = None) -> dict[str, Any]:
                 customer_id=customer_id,
                 notes=notes or "Ordered via WhatsApp",
             )
-        elif sess.pnr and sess.station_id:
-            order = api_client.create_train_order(
-                pnr=sess.pnr,
-                station_id=sess.station_id,
-                vendor_id=sess.vendor_id,
-                items=items,
-                customer_id=customer_id,
-                coach=coach,
-                berth=berth,
-                notes=notes or "Ordered via WhatsApp",
-            )
         else:
-            return {"status": "error", "message": "Train number ya PNR complete karein."}
+            return {"status": "error", "message": "Train number complete karein."}
     except api_client.APIError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -605,6 +530,7 @@ def place_train_order(notes: str | None = None) -> dict[str, Any]:
     sess.last_order_id = order_id
     sess.clear_cart()
     sess.flow_step = FlowStep.IDLE
+    sess.touch_journey()  # keep train/name/seat for "Add more" within TTL
 
     total = _inr(int(order.get("total_cents", 0)))
     dw_start = order.get("delivery_window_start", "")
@@ -616,19 +542,22 @@ def place_train_order(notes: str | None = None) -> dict[str, Any]:
             f"  {it.get('product_name', 'Item')} x{it.get('quantity')} = ₹{_inr(int(it.get('line_total_cents', 0))):.2f}"
         )
 
+    seat = f"{sess.coach}/{sess.berth}" if sess.coach and sess.berth else ""
+    train = sess.train_number or order.get("train_number") or ""
     return {
         "status": "success",
         "order_id": order_id,
         "order_status": order.get("status"),
         "total_inr": total,
-        "pnr": sess.pnr or sess.train_number,
-        "station": order.get("station_name") or sess.station_name,
+        "train": train,
+        "seat": seat,
         "vendor": order.get("vendor_name") or sess.vendor_name,
+        "payment_status": order.get("payment_status", "pending"),
         "delivery_window": f"{dw_start} – {dw_end}" if dw_start else None,
         "items_summary": "\n".join(item_lines) if item_lines else None,
         "message": (
             f"Order placed! ID {order_id[:8]}… Total ₹{total:.2f}. "
-            f"Delivery at {sess.station_name} between scheduled window. Status: {order.get('status')}."
+            f"Train {train} seat {seat}. Pantry will confirm delivery time. Status: {order.get('status')}."
         ),
     }
 
@@ -645,8 +574,10 @@ def get_train_order_status(order_id: str) -> dict[str, Any]:
         "order_id": str(order.get("id")),
         "order_status": order.get("status"),
         "total_inr": _inr(int(order.get("total_cents", 0))),
-        "pnr": order.get("pnr"),
-        "station": order.get("station_name"),
+        "train": order.get("train_number"),
+        "seat": f"{order.get('coach')}/{order.get('berth')}" if order.get("coach") else None,
+        "payment_status": order.get("payment_status"),
+        "payment_method": order.get("payment_method"),
         "vendor": order.get("vendor_name"),
         "delivery_window_start": order.get("delivery_window_start"),
         "delivery_window_end": order.get("delivery_window_end"),
@@ -674,8 +605,8 @@ def get_recent_orders() -> dict[str, Any]:
                 "order_id": str(o.get("id")),
                 "status": o.get("status"),
                 "total_inr": _inr(int(o.get("total_cents", 0))),
-                "pnr": o.get("pnr"),
-                "station": o.get("station_name"),
+                "train": o.get("train_number"),
+                "payment_status": o.get("payment_status"),
                 "source": o.get("source"),
             }
         )

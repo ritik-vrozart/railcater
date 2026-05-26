@@ -162,6 +162,65 @@ func (r *TrainRepository) ListOrderableStops(ctx context.Context, trainID, fromS
 	return scanRouteStops(rows)
 }
 
+// EnsureOnboardRouteStop adds a placeholder route stop when a train has none (e.g. pantry linked via admin without a full route).
+func (r *TrainRepository) EnsureOnboardRouteStop(ctx context.Context, trainID uuid.UUID) error {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM train_route_stops WHERE train_id = $1)
+	`, trainID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	var stationID uuid.UUID
+	err := r.pool.QueryRow(ctx, `SELECT id FROM stations ORDER BY code LIMIT 1`).Scan(&stationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperror.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO train_route_stops (train_id, station_id, stop_order, halt_minutes, platform)
+		VALUES ($1, $2, 1, 0, 'onboard')
+		ON CONFLICT (train_id, station_id) DO NOTHING
+	`, trainID, stationID)
+	return err
+}
+
+// FirstRouteStationID returns a route stop for operational/delivery metadata (WhatsApp onboard orders).
+// Prefers first stop with a passenger halt; falls back to first stop on the route.
+func (r *TrainRepository) FirstRouteStationID(ctx context.Context, trainID uuid.UUID) (uuid.UUID, error) {
+	var stationID uuid.UUID
+	err := r.pool.QueryRow(ctx, `
+		SELECT trs.station_id
+		FROM train_route_stops trs
+		WHERE trs.train_id = $1 AND trs.halt_minutes >= $2
+		ORDER BY trs.stop_order
+		LIMIT 1
+	`, trainID, minHaltForDeliveryMinutes).Scan(&stationID)
+	if err == nil {
+		return stationID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, err
+	}
+	err = r.pool.QueryRow(ctx, `
+		SELECT trs.station_id
+		FROM train_route_stops trs
+		WHERE trs.train_id = $1
+		ORDER BY trs.stop_order
+		LIMIT 1
+	`, trainID).Scan(&stationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, apperror.ErrNotFound
+	}
+	return stationID, err
+}
+
 func (r *TrainRepository) GetRouteStop(ctx context.Context, trainID, stationID uuid.UUID) (models.TrainRouteStop, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT trs.id, trs.train_id, trs.station_id, s.code, s.name,

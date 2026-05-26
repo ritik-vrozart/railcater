@@ -17,7 +17,6 @@ type Config struct {
 	HTTPTimeout time.Duration
 	JWTSecret   string
 	JWTExpiry   time.Duration
-	// WhatsApp notifications via Python agent
 	AgentNotifyURL    string
 	AgentNotifySecret string
 }
@@ -25,8 +24,8 @@ type Config struct {
 func Load() (Config, error) {
 	_ = godotenv.Load()
 
-	port := getenv("PORT", "8080")
-	dbURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/whatsapp_bot?sslmode=disable")
+	port := getenv("PORT", "")
+	dbURL := getenv("DATABASE_URL", "")
 	tenantID, err := uuid.Parse(getenv("DEFAULT_TENANT_ID", "00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		return Config{}, err
@@ -37,8 +36,8 @@ func Load() (Config, error) {
 		timeoutSec = 30
 	}
 
-	cors := getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
-	jwtSecret := getenv("JWT_SECRET", "dev-change-me-in-production")
+	cors := getenv("CORS_ORIGINS", "")
+	jwtSecret := getenv("JWT_SECRET", "")
 	jwtHours, _ := strconv.Atoi(getenv("JWT_EXPIRY_HOURS", "72"))
 	if jwtHours <= 0 {
 		jwtHours = 72
@@ -52,8 +51,8 @@ func Load() (Config, error) {
 		HTTPTimeout:       time.Duration(timeoutSec) * time.Second,
 		JWTSecret:         jwtSecret,
 		JWTExpiry:         time.Duration(jwtHours) * time.Hour,
-		AgentNotifyURL:    getenv("AGENT_NOTIFY_URL", "http://localhost:8000/internal/notify/delivery"),
-		AgentNotifySecret: getenv("AGENT_NOTIFY_SECRET", "dev-notify-secret"),
+		AgentNotifyURL:    getenv("AGENT_NOTIFY_URL", ""),
+		AgentNotifySecret: getenv("AGENT_NOTIFY_SECRET", ""),
 	}, nil
 }
 

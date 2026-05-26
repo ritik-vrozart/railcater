@@ -19,7 +19,7 @@ type CreateTrainOrderInput struct {
 	TenantID            uuid.UUID
 	PNR                 string
 	TrainID             uuid.UUID
-	StationID           uuid.UUID
+	StationID           *uuid.UUID
 	VendorID            uuid.UUID
 	CustomerID          *uuid.UUID
 	Coach               string

@@ -21,8 +21,7 @@ class DeliveryNotifyRequest(BaseModel):
     order_id: str
     phone: str
     passenger_name: str | None = None
-    station_name: str | None = None
-    station_code: str | None = None
+    train_number: str | None = None
     coach: str | None = None
     berth: str | None = None
     delivery_window_start: str
@@ -50,7 +49,8 @@ class OrderStatusNotifyRequest(BaseModel):
     passenger_name: str | None = None
     status: str
     train_number: str | None = None
-    station_name: str | None = None
+    coach: str | None = None
+    berth: str | None = None
 
 
 _STATUS_MESSAGES = {
@@ -81,15 +81,17 @@ async def notify_order_status(req: OrderStatusNotifyRequest):
         ("📦 *Order update*", f"Status: *{req.status}*"),
     )
     name = req.passenger_name or "Customer"
-    train = f" on train *{req.train_number}*" if req.train_number else ""
-    station = f" at *{req.station_name}*" if req.station_name else ""
+    train = f" · Train *{req.train_number}*" if req.train_number else ""
+    seat = ""
+    if req.coach and req.berth:
+        seat = f" · Seat *{req.coach}/{req.berth}*"
 
     body = (
         f"{title}\n\n"
         f"Hi {name},\n"
-        f"Order `{req.order_id[:8]}…`{train}{station}.\n"
+        f"Order `{req.order_id[:8]}…`{train}{seat}\n"
         f"{detail}\n\n"
-        f"Thank you for ordering with RailCater!"
+        f"Thank you for ordering with RailFood!"
     )
 
     await wa.send_text(to, body)
@@ -112,9 +114,8 @@ async def notify_delivery(req: DeliveryNotifyRequest):
     if not to:
         raise HTTPException(status_code=400, detail="invalid phone")
 
-    station = req.station_name or req.station_code or "your station"
     start_fmt = _format_time(req.delivery_window_start)
-    end_fmt = _format_time(req.delivery_window_end) if req.delivery_window_end else ""
+    train = f"Train *{req.train_number}* · " if req.train_number else ""
 
     seat = ""
     if req.coach and req.berth:
@@ -123,16 +124,14 @@ async def notify_delivery(req: DeliveryNotifyRequest):
         seat = f"\n🪑 Coach: *{req.coach}*"
 
     name = req.passenger_name or "Customer"
-    time_line = f"by *{start_fmt}*" if start_fmt else "soon"
-    if end_fmt and end_fmt != start_fmt:
-        time_line = f"between *{start_fmt}* and *{end_fmt}*"
+    time_line = f"*{start_fmt}* tak" if start_fmt else "jald hi"
 
     body = (
-        f"🚂 *Delivery update*\n\n"
+        f"🍱 *Delivery time*\n\n"
         f"Hi {name},\n"
-        f"Your train food order `{req.order_id[:8]}…` will be delivered at "
-        f"*{station}* {time_line}.{seat}\n\n"
-        f"Please be at your seat. Thank you! 🍱"
+        f"{train}Aapka order `{req.order_id[:8]}…` seat par "
+        f"{time_line} pahunch jayega.{seat}\n\n"
+        f"Apni seat par ready rahein. Dhanyavaad!"
     )
 
     await wa.send_text(to, body)

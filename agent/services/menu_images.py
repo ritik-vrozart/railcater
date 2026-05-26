@@ -8,14 +8,19 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Shown when vendor has not set image_url (WhatsApp needs HTTPS)
-DEFAULT_FOOD_IMAGE = (
-    "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&h=400&fit=crop&q=80"
-)
+
+def default_food_image_url() -> str:
+    url = (settings.default_menu_image_url or "").strip()
+    if url:
+        return url
+    logger.warning(
+        "DEFAULT_MENU_IMAGE_URL not set — menu items without image_url may fail on WhatsApp"
+    )
+    return ""
 
 
-def resolve_menu_image_url(raw: str | None) -> str:
-    """Return a public HTTPS URL suitable for WhatsApp image messages."""
+def resolve_menu_image_url(raw: str | None) -> str | None:
+    """Return a public HTTPS URL suitable for WhatsApp image messages, or None."""
     if raw:
         url = raw.strip()
         if url.startswith("//"):
@@ -26,6 +31,10 @@ def resolve_menu_image_url(raw: str | None) -> str:
             return url
         if url.startswith("/"):
             base = settings.api_base_url.rstrip("/")
-            return f"{base}{url}"
+            if base:
+                return f"{base}{url}"
+            logger.warning("Relative image path %s but API_BASE_URL is not set", url)
+            return None
 
-    return DEFAULT_FOOD_IMAGE
+    fallback = default_food_image_url()
+    return fallback or None
