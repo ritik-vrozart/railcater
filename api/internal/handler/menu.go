@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -46,7 +47,7 @@ func (s *Server) ListVendorMenu(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid vendor id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.ensureVendorExists(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -56,6 +57,29 @@ func (s *Server) ListVendorMenu(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.Internal(err))
 		return
 	}
+
+	if dateStr := r.URL.Query().Get("date"); dateStr != "" {
+		menuDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			writeError(w, apperror.BadRequest("date must be YYYY-MM-DD"))
+			return
+		}
+		allowed, err := s.dailyMenus.AvailableMenuItemIDs(r.Context(), vendorID, menuDate)
+		if err != nil {
+			writeError(w, apperror.Internal(err))
+			return
+		}
+		if len(allowed) > 0 {
+			filtered := items[:0]
+			for _, it := range items {
+				if allowed[it.ID] {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -65,7 +89,7 @@ func (s *Server) ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid vendor id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.ensureVendorExists(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -91,7 +115,7 @@ func (s *Server) CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid vendor id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.authorizeVendor(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -142,7 +166,7 @@ func (s *Server) UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid category id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.authorizeVendor(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -186,7 +210,7 @@ func (s *Server) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid vendor id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.authorizeVendor(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -248,7 +272,7 @@ func (s *Server) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid menu item id"))
 		return
 	}
-	if err := s.ensureVendor(r, vendorID); err != nil {
+	if err := s.authorizeVendor(r, vendorID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -278,7 +302,7 @@ func (s *Server) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-func (s *Server) ensureVendor(r *http.Request, vendorID uuid.UUID) error {
+func (s *Server) ensureVendorExists(r *http.Request, vendorID uuid.UUID) error {
 	_, err := s.vendors.GetByID(r.Context(), s.tenantID, vendorID)
 	if errors.Is(err, apperror.ErrNotFound) {
 		return apperror.NotFound("vendor not found")

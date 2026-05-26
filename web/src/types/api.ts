@@ -30,6 +30,54 @@ export interface Vendor {
   updated_at: string
 }
 
+export interface VendorTrain {
+  train_id: string
+  train_number: string
+  train_name: string
+  is_active: boolean
+}
+
+export interface VendorDetail extends Vendor {
+  trains?: VendorTrain[]
+  period_orders: number
+  period_revenue_cents: number
+  total_orders: number
+  total_revenue_cents: number
+  admin_email?: string
+}
+
+export interface AdminDashboard {
+  date_from: string
+  date_to: string
+  total_pantries: number
+  active_pantries: number
+  period_orders: number
+  period_revenue_cents: number
+  total_orders: number
+  total_revenue_cents: number
+  pantries?: VendorDetail[]
+}
+
+export interface DailyMenuItem {
+  id: string
+  daily_menu_id: string
+  menu_item_id: string
+  menu_item_name?: string
+  is_available: boolean
+  stock_override?: number
+  created_at: string
+}
+
+export interface DailyMenu {
+  id: string
+  vendor_id: string
+  menu_date: string
+  notes?: string
+  items: DailyMenuItem[]
+  created_at: string
+  updated_at: string
+}
+
 export type FoodType = 'veg' | 'non_veg'
 
 export interface MenuCategory {

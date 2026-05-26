@@ -6,9 +6,9 @@ import { formatRole } from '../../lib/format'
 const navItems = [
   { to: '/vendor', label: 'Overview', icon: '◉', end: true },
   { to: '/vendor/orders', label: 'Orders', icon: '☰' },
+  { to: '/vendor/daily-menu', label: "Today's menu", icon: '📅' },
   { to: '/vendor/categories', label: 'Categories', icon: '▦' },
-  { to: '/vendor/menu', label: 'Menu', icon: '◎' },
-  { to: '/vendor/stations', label: 'Stations', icon: '▣' },
+  { to: '/vendor/menu', label: 'Master menu', icon: '◎' },
 ]
 
 export function Sidebar() {
@@ -16,14 +16,14 @@ export function Sidebar() {
   const { vendor } = useVendor()
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-5 py-5">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 bg-white">
+      <div className="shrink-0 border-b border-gray-200 px-5 py-5">
         <p className="text-xs font-bold uppercase tracking-widest text-orange-600">RailCater</p>
         {/* <p className="mt-1 truncate text-sm font-semibold text-gray-900">{vendor?.name ?? 'Vendor panel'}</p> */}
         <p className="truncate text-xs text-gray-500">{vendor?.code}</p>
       </div>
 
-      <nav className="flex-1 space-y-0.5 p-3">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-3">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -43,7 +43,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-gray-200 p-4">
+      <div className="shrink-0 border-t border-gray-200 p-4">
         <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
         <p className="truncate text-xs text-gray-500">{user?.email}</p>
         <span className="mt-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">

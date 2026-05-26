@@ -47,6 +47,10 @@ func Unauthorized(msg string) *HTTPError {
 	return &HTTPError{Status: 401, Message: msg}
 }
 
+func Forbidden(msg string) *HTTPError {
+	return &HTTPError{Status: 403, Message: msg}
+}
+
 func Internal(err error) *HTTPError {
 	return &HTTPError{Status: 500, Message: "internal server error", Err: err}
 }

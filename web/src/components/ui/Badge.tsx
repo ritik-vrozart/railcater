@@ -10,6 +10,9 @@ const variants: Record<string, string> = {
 const statusVariant: Record<string, string> = {
   pending: 'warning',
   confirmed: 'info',
+  preparing: 'info',
+  ready: 'primary',
+  dispatched: 'primary',
   processing: 'info',
   shipped: 'primary',
   delivered: 'success',

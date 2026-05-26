@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/apperror"
+	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/notify"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/repository"
 )
 
@@ -37,7 +39,11 @@ func (s *Server) ListOrders(w http.ResponseWriter, r *http.Request) {
 		customerID = &id
 	}
 
-	items, total, err := s.orders.List(r.Context(), s.tenantID, page, perPage, status, vendorID, customerID)
+	items, total, err := s.orders.List(r.Context(), s.tenantID, page, perPage, repository.OrderListFilter{
+		Status:     status,
+		VendorID:   vendorID,
+		CustomerID: customerID,
+	})
 	if err != nil {
 		writeError(w, apperror.Internal(err))
 		return
@@ -127,14 +133,30 @@ type updateOrderStatusRequest struct {
 }
 
 var validOrderStatuses = map[string]bool{
-	"pending": true, "confirmed": true, "processing": true,
-	"shipped": true, "delivered": true, "cancelled": true,
+	"pending": true, "confirmed": true, "preparing": true, "ready": true,
+	"dispatched": true, "processing": true, "shipped": true,
+	"delivered": true, "cancelled": true,
+}
+
+// trainOrderFlow defines allowed status transitions for pantry train orders.
+var trainOrderTransitions = map[string][]string{
+	"confirmed":  {"preparing", "cancelled"},
+	"preparing":  {"ready", "cancelled"},
+	"ready":      {"dispatched", "cancelled"},
+	"dispatched": {"delivered", "cancelled"},
+	"pending":    {"confirmed", "cancelled"},
+	"processing": {"shipped", "delivered", "cancelled"},
+	"shipped":    {"delivered", "cancelled"},
 }
 
 func (s *Server) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, apperror.BadRequest("invalid order id"))
+		return
+	}
+	if err := s.requireAuth(r); err != nil {
+		writeError(w, err)
 		return
 	}
 
@@ -148,6 +170,25 @@ func (s *Server) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, err := s.orders.GetByID(r.Context(), s.tenantID, id)
+	if errors.Is(err, apperror.ErrNotFound) {
+		writeError(w, apperror.NotFound("order not found"))
+		return
+	} else if err != nil {
+		writeError(w, apperror.Internal(err))
+		return
+	}
+	if err := s.authorizeOrder(r, existing.VendorID); err != nil {
+		writeError(w, err)
+		return
+	}
+	if existing.Source == "train" {
+		if !canTransitionTrainOrder(existing.Status, req.Status) {
+			writeError(w, apperror.BadRequest("invalid status transition from "+existing.Status+" to "+req.Status))
+			return
+		}
+	}
+
 	o, err := s.orders.UpdateStatus(r.Context(), s.tenantID, id, req.Status)
 	if errors.Is(err, apperror.ErrNotFound) {
 		writeError(w, apperror.NotFound("order not found"))
@@ -156,7 +197,29 @@ func (s *Server) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.Internal(err))
 		return
 	}
+
+	if existing.Status != req.Status && existing.Source == "train" {
+		orderCopy := o
+		go notify.OrderStatus(context.Background(), s.agentNotifyURL, s.agentNotifySecret, orderCopy, req.Status)
+	}
+
 	writeJSON(w, http.StatusOK, o)
+}
+
+func canTransitionTrainOrder(from, to string) bool {
+	if from == to {
+		return true
+	}
+	allowed, ok := trainOrderTransitions[from]
+	if !ok {
+		return to == "cancelled"
+	}
+	for _, s := range allowed {
+		if s == to {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckStock is used by the FastAPI agent before confirming an order.

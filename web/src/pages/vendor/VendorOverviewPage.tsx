@@ -45,11 +45,6 @@ export function VendorOverviewPage() {
       render: (o) => o.passenger_name ?? o.customer_name ?? '—',
     },
     {
-      key: 'station',
-      header: 'Station',
-      render: (o) => (o.station_code ? `${o.station_code} — ${o.station_name}` : '—'),
-    },
-    {
       key: 'total',
       header: 'Amount',
       render: (o) => formatMoney(o.total_cents),
@@ -83,13 +78,13 @@ export function VendorOverviewPage() {
       </div>
 
       <Card>
-        <CardHeader title="Recent orders" description="Latest train food orders for your kitchen" />
+        <CardHeader title="Recent orders" description="Latest train food orders for your pantry" />
         <DataTable
           columns={recentColumns}
           data={orders.slice(0, 20)}
           rowKey={(o) => o.id}
           onRowClick={(o) => navigate(`/vendor/orders/${o.id}`)}
-          searchKeys={['pnr', 'passenger_name', 'station_code', 'station_name', 'status']}
+          searchKeys={['pnr', 'passenger_name', 'status']}
           searchPlaceholder="Search orders…"
           loading={loading}
           pageSize={5}

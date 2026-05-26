@@ -7,15 +7,12 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/google/uuid"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/apperror"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/auth"
 	appmw "github.com/ritikkumarpathak/whatsapp-bot/api/internal/middleware"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/models"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/repository"
 )
-
-var defaultVendorID = uuid.MustParse("c3000001-0000-4000-8000-000000000001")
 
 type registerRequest struct {
 	Name     string  `json:"name"`
@@ -52,10 +49,9 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	if role == "" {
 		role = "passenger"
 	}
-
-	var vendorID *uuid.UUID
-	if role == "vendor_admin" {
-		vendorID = &defaultVendorID
+	if role != "passenger" {
+		writeError(w, apperror.Forbidden("only passenger accounts can self-register; pantry logins are created by the department head"))
+		return
 	}
 
 	u, err := s.users.Create(r.Context(), repository.CreateUserInput{
@@ -65,7 +61,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		Phone:        req.Phone,
 		PasswordHash: hash,
 		Role:         role,
-		VendorID:     vendorID,
+		VendorID:     nil,
 	})
 	if errors.Is(err, apperror.ErrConflict) {
 		writeError(w, apperror.Conflict("email already registered"))

@@ -13,16 +13,16 @@ export function DashboardLayout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
-          <p className="text-sm text-gray-500">Vendor administration</p>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+          <p className="text-sm text-gray-500">Pantry administration</p>
           <ButtonLight variant="secondary" size="sm" onClick={handleLogout}>
             Sign out
           </ButtonLight>
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>

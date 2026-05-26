@@ -67,11 +67,6 @@ export function VendorOrdersPage() {
         ),
     },
     {
-      key: 'station',
-      header: 'Delivery station',
-      render: (o) => (o.station_code ? `${o.station_code} — ${o.station_name}` : '—'),
-    },
-    {
       key: 'total',
       header: 'Amount',
       render: (o) => formatMoney(o.total_cents),
@@ -133,13 +128,11 @@ export function VendorOrdersPage() {
               'pnr',
               'passenger_name',
               'customer_name',
-              'station_code',
-              'station_name',
               'train_number',
               'status',
               (o) => o.id,
             ]}
-            searchPlaceholder="Search by PNR, passenger, station…"
+            searchPlaceholder="Search by PNR, passenger, train…"
             loading={loading}
             pageSize={10}
             emptyTitle="No orders found"

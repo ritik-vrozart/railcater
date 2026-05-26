@@ -12,7 +12,13 @@ import { VendorMenuPage } from './pages/vendor/VendorMenuPage'
 import { VendorOrderDetailPage } from './pages/vendor/VendorOrderDetailPage'
 import { VendorOrdersPage } from './pages/vendor/VendorOrdersPage'
 import { VendorOverviewPage } from './pages/vendor/VendorOverviewPage'
-import { VendorStationsPage } from './pages/vendor/VendorStationsPage'
+import { VendorDailyMenuPage } from './pages/vendor/VendorDailyMenuPage'
+import { AdminLayout } from './components/admin/AdminLayout'
+import { RoleRoute } from './components/RoleRoute'
+import { AdminOverviewPage } from './pages/admin/AdminOverviewPage'
+import { AdminPantriesPage } from './pages/admin/AdminPantriesPage'
+import { AdminInvitePantryPage } from './pages/admin/AdminInvitePantryPage'
+import { AdminOrdersPage } from './pages/admin/AdminOrdersPage'
 
 function GuestOnly({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -36,10 +42,28 @@ function HomeRedirect() {
       </div>
     )
   }
+  if (user?.role === 'super_admin') {
+    return <Navigate to="/admin" replace />
+  }
   if (user?.role === 'vendor_admin') {
     return <Navigate to="/vendor" replace />
   }
   return <DashboardPage />
+}
+
+function AdminRoutes() {
+  return (
+    <RoleRoute roles={['super_admin']}>
+      <Routes>
+        <Route element={<AdminLayout />}>
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="pantries" element={<AdminPantriesPage />} />
+          <Route path="orders" element={<AdminOrdersPage />} />
+          <Route path="invite" element={<AdminInvitePantryPage />} />
+        </Route>
+      </Routes>
+    </RoleRoute>
+  )
 }
 
 function VendorRoutes() {
@@ -52,7 +76,7 @@ function VendorRoutes() {
           <Route path="orders/:orderId" element={<VendorOrderDetailPage />} />
           <Route path="categories" element={<VendorCategoriesPage />} />
           <Route path="menu" element={<VendorMenuPage />} />
-          <Route path="stations" element={<VendorStationsPage />} />
+          <Route path="daily-menu" element={<VendorDailyMenuPage />} />
         </Route>
       </Routes>
     </VendorProvider>
@@ -86,7 +110,18 @@ function AppRoutes() {
         path="/vendor/*"
         element={
           <ProtectedRoute>
-            <VendorRoutes />
+            <RoleRoute roles={['vendor_admin']}>
+              <VendorRoutes />
+            </RoleRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute>
+            <AdminRoutes />
           </ProtectedRoute>
         }
       />

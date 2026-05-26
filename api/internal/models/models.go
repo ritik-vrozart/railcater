@@ -138,6 +138,55 @@ type Vendor struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type VendorTrain struct {
+	TrainID     uuid.UUID `json:"train_id"`
+	TrainNumber string    `json:"train_number"`
+	TrainName   string    `json:"train_name"`
+	IsActive    bool      `json:"is_active"`
+}
+
+type VendorDetail struct {
+	Vendor
+	Trains          []VendorTrain `json:"trains"`
+	PeriodOrders    int           `json:"period_orders"`
+	PeriodRevenue   int64         `json:"period_revenue_cents"`
+	TotalOrders     int           `json:"total_orders"`              // all-time
+	TotalRevenue    int64         `json:"total_revenue_cents"`       // all-time
+	AdminEmail      *string       `json:"admin_email,omitempty"`
+}
+
+type DailyMenu struct {
+	ID        uuid.UUID       `json:"id"`
+	VendorID  uuid.UUID       `json:"vendor_id"`
+	MenuDate  string          `json:"menu_date"`
+	Notes     *string         `json:"notes,omitempty"`
+	Items     []DailyMenuItem `json:"items,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+type DailyMenuItem struct {
+	ID             uuid.UUID `json:"id"`
+	DailyMenuID    uuid.UUID `json:"daily_menu_id"`
+	MenuItemID     uuid.UUID `json:"menu_item_id"`
+	MenuItemName   string    `json:"menu_item_name,omitempty"`
+	IsAvailable    bool      `json:"is_available"`
+	StockOverride  *int      `json:"stock_override,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type AdminDashboard struct {
+	DateFrom       string         `json:"date_from"`
+	DateTo         string         `json:"date_to"`
+	TotalPantries  int            `json:"total_pantries"`
+	ActivePantries int            `json:"active_pantries"`
+	PeriodOrders   int            `json:"period_orders"`
+	PeriodRevenue  int64          `json:"period_revenue_cents"`
+	TotalOrders    int            `json:"total_orders"`
+	TotalRevenue   int64          `json:"total_revenue_cents"`
+	Pantries       []VendorDetail `json:"pantries"`
+}
+
 type MenuCategory struct {
 	ID          uuid.UUID `json:"id"`
 	VendorID    uuid.UUID `json:"vendor_id"`

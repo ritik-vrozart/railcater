@@ -43,6 +43,60 @@ def _normalize_phone(phone: str) -> str:
     return "".join(c for c in phone.strip() if c.isdigit())
 
 
+class OrderStatusNotifyRequest(BaseModel):
+    secret: str
+    order_id: str
+    phone: str
+    passenger_name: str | None = None
+    status: str
+    train_number: str | None = None
+    station_name: str | None = None
+
+
+_STATUS_MESSAGES = {
+    "preparing": ("👨‍🍳 *Order update*", "Your food is being prepared at the pantry."),
+    "ready": ("✅ *Order update*", "Your order is ready and will be dispatched soon."),
+    "dispatched": ("🚚 *Dispatched*", "Your order has left the pantry and is on the way to your seat."),
+    "delivered": ("🍱 *Delivered*", "Your order has been delivered. Enjoy your meal!"),
+}
+
+
+@router.post("/order-status")
+async def notify_order_status(req: OrderStatusNotifyRequest):
+    expected = settings.agent_notify_secret
+    if not expected or req.secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    wa = get_whatsapp()
+    if not wa.configured:
+        logger.warning("WhatsApp not configured; skip status notify for order %s", req.order_id)
+        return {"status": "skipped", "reason": "whatsapp_not_configured"}
+
+    to = _normalize_phone(req.phone)
+    if not to:
+        raise HTTPException(status_code=400, detail="invalid phone")
+
+    title, detail = _STATUS_MESSAGES.get(
+        req.status,
+        ("📦 *Order update*", f"Status: *{req.status}*"),
+    )
+    name = req.passenger_name or "Customer"
+    train = f" on train *{req.train_number}*" if req.train_number else ""
+    station = f" at *{req.station_name}*" if req.station_name else ""
+
+    body = (
+        f"{title}\n\n"
+        f"Hi {name},\n"
+        f"Order `{req.order_id[:8]}…`{train}{station}.\n"
+        f"{detail}\n\n"
+        f"Thank you for ordering with RailCater!"
+    )
+
+    await wa.send_text(to, body)
+    logger.info("Sent order status %s to %s for order %s", req.status, to, req.order_id)
+    return {"status": "sent", "to": to}
+
+
 @router.post("/delivery")
 async def notify_delivery(req: DeliveryNotifyRequest):
     expected = settings.agent_notify_secret

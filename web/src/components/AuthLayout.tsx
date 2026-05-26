@@ -13,14 +13,14 @@ export function AuthLayout() {
               Train food ordering, simplified for passengers and vendors.
             </h1>
             <p className="mt-4 max-w-sm text-slate-400">
-              Order meals by PNR, track delivery at your station, and manage catering operations
-              from one platform.
+              Order meals by PNR, track delivery on your train, and manage pantry operations from
+              one platform.
             </p>
           </div>
           <ul className="space-y-3 text-sm text-slate-400">
             <li className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              PNR-based ordering at upcoming stations
+              PNR-based ordering on the train
             </li>
             <li className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
@@ -28,7 +28,7 @@ export function AuthLayout() {
             </li>
             <li className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              Vendor menus and kitchen workflows
+              Pantry menus, daily stock, and order dispatch
             </li>
           </ul>
         </aside>

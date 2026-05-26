@@ -54,6 +54,80 @@ def _format_portion_row(item: dict[str, Any], portion: dict[str, Any]) -> str:
     )
 
 
+def lookup_train(number: str) -> dict[str, Any]:
+    """
+    Resolve train by number and auto-select pantry (vendor) for that train.
+
+    Args:
+        number: Train number e.g. 12951
+    """
+    number = re.sub(r"\D", "", number.strip())
+    if not number:
+        return {"status": "error", "message": "Train number is required."}
+
+    try:
+        data = api_client.lookup_train_by_number(number)
+    except api_client.APIError as exc:
+        return {"status": "error", "message": str(exc)}
+
+    from store.session import FlowStep
+
+    train = data.get("train") or {}
+    pantries = data.get("pantries") or []
+    if not pantries:
+        return {
+            "status": "error",
+            "message": f"Train {number} par abhi koi pantry nahi hai.",
+        }
+
+    pantry = pantries[0]
+    if len(pantries) > 1:
+        # Prefer explicitly linked pantry; first is fine for now
+        pass
+
+    sess = _session()
+    sess.reset_journey()
+    sess.train_number = train.get("number") or number
+    sess.train_id = str(train.get("id", ""))
+    sess.train_name = train.get("name", "")
+    sess.vendor_id = str(pantry.get("id", ""))
+    sess.vendor_name = pantry.get("name", "")
+    sess.flow_step = FlowStep.AWAITING_NAME
+
+    return {
+        "status": "success",
+        "train_number": sess.train_number,
+        "train_name": sess.train_name,
+        "pantry_name": sess.vendor_name,
+        "message": (
+            f"Train {sess.train_number} {sess.train_name} — "
+            f"Pantry: {sess.vendor_name}. Ab apna naam bhejein."
+        ),
+    }
+
+
+def set_passenger_name(name: str) -> dict[str, Any]:
+    """Save passenger name and ask for seat."""
+    name = name.strip()
+    if len(name) < 2:
+        return {"status": "error", "message": "Please send your name (at least 2 characters)."}
+
+    from store.session import FlowStep
+
+    sess = _session()
+    if not sess.train_number:
+        return {"status": "error", "message": "Pehle train number bhejein."}
+
+    sess.passenger_name = name
+    sess.flow_step = FlowStep.AWAITING_SEAT
+    ensure_whatsapp_customer(name=name)
+    return {
+        "status": "success",
+        "passenger_name": name,
+        "message": f"Namaste {name}! Ab apna coach aur seat number bhejein.",
+    }
+
+
 def get_stops_with_vendors() -> dict[str, Any]:
     """For each stop on the loaded PNR route, list vendors serving that station."""
     sess = _session()
@@ -223,14 +297,70 @@ def set_delivery_seat(coach: str, berth: str) -> dict[str, Any]:
     from store.session import FlowStep
 
     sess = _session()
+    if not sess.train_number:
+        return {"status": "error", "message": "Pehle train number bhejein."}
     sess.coach = coach
     sess.berth = berth
-    sess.flow_step = FlowStep.ORDERING
+    sess.flow_step = FlowStep.AWAITING_CATEGORY
     return {
         "status": "success",
         "coach": coach,
         "berth": berth,
-        "message": f"Delivery seat set to {coach} / {berth}.",
+        "message": f"Seat {coach}/{berth} saved. Ab category choose karein.",
+    }
+
+
+def list_menu_categories() -> dict[str, Any]:
+    """List menu categories for the train's pantry."""
+    sess = _session()
+    if not sess.vendor_id:
+        return {"status": "error", "message": "Pehle train number bhejein."}
+
+    try:
+        cats = api_client.list_menu_categories(sess.vendor_id)
+    except api_client.APIError as exc:
+        return {"status": "error", "message": str(exc)}
+
+    rows = [
+        {
+            "id": str(c.get("id", "")),
+            "name": c.get("name", ""),
+            "food_type": c.get("food_type", ""),
+        }
+        for c in cats
+        if c.get("is_active", True)
+    ]
+    if not rows:
+        return {"status": "error", "message": "Koi category nahi mili."}
+
+    return {"status": "success", "categories": rows, "count": len(rows)}
+
+
+def select_category(category_id: str) -> dict[str, Any]:
+    """Pick a menu category before browsing items."""
+    sess = _session()
+    if not sess.vendor_id:
+        return {"status": "error", "message": "Pehle train number bhejein."}
+
+    try:
+        cats = api_client.list_menu_categories(sess.vendor_id)
+    except api_client.APIError as exc:
+        return {"status": "error", "message": str(exc)}
+
+    cat = next((c for c in cats if str(c.get("id")) == category_id.strip()), None)
+    if not cat:
+        return {"status": "error", "message": "Category not found."}
+
+    from store.session import FlowStep
+
+    sess.category_id = category_id.strip()
+    sess.category_name = cat.get("name", "")
+    sess.clear_cart()
+    sess.flow_step = FlowStep.ORDERING
+    return {
+        "status": "success",
+        "category_name": sess.category_name,
+        "message": f"Category *{sess.category_name}* — ab items choose karein.",
     }
 
 
@@ -264,16 +394,21 @@ def select_vendor(vendor_id: str) -> dict[str, Any]:
     }
 
 
-def browse_menu() -> dict[str, Any]:
-    """List menu items and portions for the selected vendor."""
+def browse_menu(*, category_id: str | None = None) -> dict[str, Any]:
+    """List menu items and portions for the selected vendor (optional category filter)."""
     sess = _session()
     if not sess.vendor_id:
         return {"status": "error", "message": "No vendor selected. Call select_vendor first."}
+
+    cat_filter = category_id or sess.category_id
 
     try:
         items = api_client.get_vendor_menu(sess.vendor_id)
     except api_client.APIError as exc:
         return {"status": "error", "message": str(exc)}
+
+    if cat_filter:
+        items = [it for it in items if str(it.get("category_id") or "") == cat_filter]
 
     lines = []
     portions_index: list[dict[str, Any]] = []
@@ -285,10 +420,14 @@ def browse_menu() -> dict[str, Any]:
             portions_index.append(
                 {
                     "menu_portion_id": portion["id"],
+                    "menu_item_id": str(item.get("id", "")),
                     "item_name": item.get("name"),
+                    "item_description": item.get("description") or "",
                     "portion_label": portion.get("label"),
                     "price_inr": _inr(int(portion.get("price_cents", 0))),
                     "stock": portion.get("stock_quantity", 0),
+                    "image_url": item.get("image_url"),
+                    "is_veg": bool(item.get("is_veg", True)),
                 }
             )
 
@@ -380,8 +519,9 @@ def view_train_cart() -> dict[str, Any]:
         "empty": False,
         "cart_summary": "\n".join(lines) + f"\n\nTotal: ₹{_inr(sess.cart_total_cents):.2f}",
         "cart_total_inr": _inr(sess.cart_total_cents),
-        "pnr": sess.pnr,
+        "pnr": sess.pnr or sess.train_number,
         "station": sess.station_name,
+        "train": sess.train_number,
         "vendor": sess.vendor_name,
     }
 
@@ -404,14 +544,13 @@ def clear_train_cart() -> dict[str, Any]:
 
 def place_train_order(notes: str | None = None) -> dict[str, Any]:
     """
-    Place train food order via backend API (deducts portion stock, validates PNR/delivery).
+    Place train food order via backend API.
 
-    Args:
-        notes: Optional delivery notes (coach/berth seat details, etc.).
+    Uses WhatsApp flow (train number + name + seat) when PNR is not set.
     """
     sess = _session()
-    if not sess.pnr or not sess.station_id or not sess.vendor_id:
-        return {"status": "error", "message": "Complete PNR → station → vendor → cart before checkout."}
+    if not sess.vendor_id:
+        return {"status": "error", "message": "Complete train → name → seat → category → cart before checkout."}
     if not sess.cart_lines:
         return {"status": "error", "message": "Cart is empty."}
 
@@ -424,22 +563,39 @@ def place_train_order(notes: str | None = None) -> dict[str, Any]:
 
     customer_id = sess.customer_id
     if not customer_id:
-        cust = ensure_whatsapp_customer()
+        cust = ensure_whatsapp_customer(name=sess.passenger_name)
         if cust.get("status") == "error":
             return cust
         customer_id = cust.get("customer_id")
 
     try:
-        order = api_client.create_train_order(
-            pnr=sess.pnr,
-            station_id=sess.station_id,
-            vendor_id=sess.vendor_id,
-            items=items,
-            customer_id=customer_id,
-            coach=coach,
-            berth=berth,
-            notes=notes or "Ordered via WhatsApp",
-        )
+        if sess.train_number and not sess.pnr:
+            if not sess.passenger_name:
+                return {"status": "error", "message": "Passenger name is required."}
+            order = api_client.create_whatsapp_train_order(
+                train_number=sess.train_number,
+                train_id=sess.train_id,
+                vendor_id=sess.vendor_id,
+                passenger_name=sess.passenger_name,
+                coach=coach,
+                berth=berth,
+                items=items,
+                customer_id=customer_id,
+                notes=notes or "Ordered via WhatsApp",
+            )
+        elif sess.pnr and sess.station_id:
+            order = api_client.create_train_order(
+                pnr=sess.pnr,
+                station_id=sess.station_id,
+                vendor_id=sess.vendor_id,
+                items=items,
+                customer_id=customer_id,
+                coach=coach,
+                berth=berth,
+                notes=notes or "Ordered via WhatsApp",
+            )
+        else:
+            return {"status": "error", "message": "Train number ya PNR complete karein."}
     except api_client.APIError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -465,7 +621,7 @@ def place_train_order(notes: str | None = None) -> dict[str, Any]:
         "order_id": order_id,
         "order_status": order.get("status"),
         "total_inr": total,
-        "pnr": sess.pnr,
+        "pnr": sess.pnr or sess.train_number,
         "station": order.get("station_name") or sess.station_name,
         "vendor": order.get("vendor_name") or sess.vendor_name,
         "delivery_window": f"{dw_start} – {dw_end}" if dw_start else None,

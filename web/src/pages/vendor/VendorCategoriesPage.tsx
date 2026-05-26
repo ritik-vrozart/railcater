@@ -72,7 +72,7 @@ export function VendorCategoriesPage() {
 
       <Card padding="none">
         <div className="p-6">
-          <CardHeader title="Category master" description={`${data?.data.length ?? 0} categories`} />
+          <CardHeader title="Category master" description={`${(data?.data ?? []).length} categories`} />
           <DataTable
             columns={columns}
             data={data?.data ?? []}

@@ -21,12 +21,16 @@ class TrainCartLine:
 
 class FlowStep:
     IDLE = "idle"
+    AWAITING_TRAIN_NUMBER = "awaiting_train_number"
+    AWAITING_NAME = "awaiting_name"
+    AWAITING_SEAT = "awaiting_seat"
+    AWAITING_CATEGORY = "awaiting_category"
+    ORDERING = "ordering"  # menu + cart
+    # Legacy PNR flow (unused by WhatsApp guided UI)
     AWAITING_PNR = "awaiting_pnr"
     AWAITING_STATION = "awaiting_station"
     AWAITING_VENDOR = "awaiting_vendor"
-    AWAITING_SEAT = "awaiting_seat"
     AWAITING_SEAT_TEXT = "awaiting_seat_text"
-    ORDERING = "ordering"  # menu + cart
 
 
 @dataclass
@@ -35,6 +39,12 @@ class UserSession:
     customer_id: str | None = None
     flow_step: str = FlowStep.IDLE
     awaiting_pnr: bool = False
+    train_number: str | None = None
+    train_id: str | None = None
+    train_name: str | None = None
+    passenger_name: str | None = None
+    category_id: str | None = None
+    category_name: str | None = None
     pnr: str | None = None
     pnr_lookup: dict[str, Any] | None = None
     station_id: str | None = None
@@ -55,9 +65,15 @@ class UserSession:
         self.cart_lines = []
 
     def reset_journey(self) -> None:
-        """Keep user id but clear PNR journey state."""
+        """Keep user id but clear ordering journey state."""
         self.flow_step = FlowStep.IDLE
         self.awaiting_pnr = False
+        self.train_number = None
+        self.train_id = None
+        self.train_name = None
+        self.passenger_name = None
+        self.category_id = None
+        self.category_name = None
         self.pnr = None
         self.pnr_lookup = None
         self.station_id = None

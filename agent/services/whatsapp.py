@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from config import settings
+from services.whatsapp_token import WhatsAppAuthError, get_access_token, is_token_expired, refresh_token
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +26,19 @@ def _clip(text: str, limit: int) -> str:
 
 class WhatsAppClient:
     def __init__(self) -> None:
-        self._token = settings.whatsapp_access_token
         self._phone_id = settings.whatsapp_phone_number_id
         self._version = settings.whatsapp_api_version
 
     @property
     def configured(self) -> bool:
-        return bool(self._token and self._phone_id)
+        return bool(get_access_token() and self._phone_id)
 
     def _url(self) -> str:
         return f"https://graph.facebook.com/{self._version}/{self._phone_id}/messages"
 
-    async def _send(self, to: str, payload: dict[str, Any]) -> dict | None:
-        if not self.configured:
+    async def _send(self, to: str, payload: dict[str, Any], *, _retried: bool = False) -> dict | None:
+        token = get_access_token()
+        if not token or not self._phone_id:
             logger.warning("WhatsApp not configured; would send to %s", to)
             return None
 
@@ -48,18 +49,49 @@ class WhatsAppClient:
             **payload,
         }
         headers = {
-            "Authorization": f"Bearer {self._token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(self._url(), json=body, headers=headers)
+            if resp.status_code == 401 and not _retried and not is_token_expired():
+                logger.warning("WhatsApp 401 — attempting token refresh")
+                try:
+                    await refresh_token(token)
+                    return await self._send(to, payload, _retried=True)
+                except WhatsAppAuthError as exc:
+                    logger.error("WhatsApp auth failed after refresh: %s", exc)
+                    raise
+            if resp.status_code == 401:
+                from services.whatsapp_token import mark_token_expired
+
+                mark_token_expired()
+                raise WhatsAppAuthError(
+                    "WhatsApp token invalid/expired — run: python scripts/renew_whatsapp_token.py \"NAYA_TOKEN\""
+                )
+
             if resp.status_code >= 400:
                 logger.error("WhatsApp API error %s: %s", resp.status_code, resp.text)
+                if resp.status_code == 401:
+                    raise WhatsAppAuthError(resp.text[:300])
                 resp.raise_for_status()
             return resp.json()
 
     async def send_text(self, to: str, body: str) -> dict | None:
         return await self._send(to, {"type": "text", "text": {"preview_url": False, "body": body[:4096]}})
+
+    async def send_image(
+        self,
+        to: str,
+        image_url: str,
+        *,
+        caption: str | None = None,
+    ) -> dict | None:
+        """Send an image by public HTTPS link."""
+        image: dict[str, Any] = {"link": image_url}
+        if caption:
+            image["caption"] = caption[:1024]
+        return await self._send(to, {"type": "image", "image": image})
 
     async def send_buttons(
         self,
@@ -68,6 +100,7 @@ class WhatsAppClient:
         buttons: list[tuple[str, str]],
         *,
         header: str | None = None,
+        header_image_url: str | None = None,
         footer: str | None = None,
     ) -> dict | None:
         """Reply buttons (max 3). buttons = [(id, title), ...]"""
@@ -86,7 +119,9 @@ class WhatsAppClient:
                 ]
             },
         }
-        if header:
+        if header_image_url:
+            interactive["header"] = {"type": "image", "image": {"link": header_image_url}}
+        elif header:
             interactive["header"] = {"type": "text", "text": header[:60]}
         if footer:
             interactive["footer"] = {"text": footer[:60]}

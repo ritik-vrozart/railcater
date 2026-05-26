@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { OrderDeliverySchedule } from '../../components/vendor/OrderDeliverySchedule'
+import { OrderStatusWorkflow } from '../../components/vendor/OrderStatusWorkflow'
 import { Card, CardHeader } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatusBadge } from '../../components/ui/Badge'
@@ -96,6 +97,14 @@ export function VendorOrderDetailPage() {
 
           <Card>
             <CardHeader
+              title="Order status"
+              description="Update progress — customer gets WhatsApp at each step"
+            />
+            <OrderStatusWorkflow order={order} onUpdated={reload} />
+          </Card>
+
+          <Card>
+            <CardHeader
               title="Schedule delivery"
               description="Customer gets WhatsApp when you save (e.g. delivered by 10 PM)"
             />
@@ -131,14 +140,6 @@ export function VendorOrderDetailPage() {
                   <dd className="text-right font-medium text-gray-900">
                     {order.train_number
                       ? `${order.train_number} — ${order.train_name}`
-                      : '—'}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">Delivery station</dt>
-                  <dd className="text-right font-medium text-gray-900">
-                    {order.station_code
-                      ? `${order.station_code} — ${order.station_name}`
                       : '—'}
                   </dd>
                 </div>

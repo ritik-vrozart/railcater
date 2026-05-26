@@ -23,6 +23,7 @@ type Server struct {
 	menu       *repository.MenuRepository
 	pnr        *repository.PNRRepository
 	users      *repository.UserRepository
+	dailyMenus *repository.DailyMenuRepository
 }
 
 func NewServer(
@@ -41,6 +42,7 @@ func NewServer(
 	menu *repository.MenuRepository,
 	pnr *repository.PNRRepository,
 	users *repository.UserRepository,
+	dailyMenus *repository.DailyMenuRepository,
 ) *Server {
 	return &Server{
 		tenantID:          tenantID,
@@ -58,5 +60,6 @@ func NewServer(
 		menu:       menu,
 		pnr:        pnr,
 		users:      users,
+		dailyMenus: dailyMenus,
 	}
 }

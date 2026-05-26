@@ -24,6 +24,13 @@ from services.agent_runner import get_agent_runner
 from services import api_client
 from services import train_menu_handler as menu_handler
 from services.whatsapp import get_whatsapp
+from services.whatsapp_token import (
+    WhatsAppAuthError,
+    ensure_token_ready,
+    get_access_token,
+    is_token_expired,
+    token_file_path,
+)
 
 _STATIC_SHOP = Path(__file__).resolve().parent / "static" / "shop"
 
@@ -35,6 +42,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     if settings.google_api_key:
         os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+    try:
+        await ensure_token_ready()
+    except Exception as exc:
+        logger.warning("WhatsApp token startup check failed: %s", exc)
     yield
 
 
@@ -74,6 +85,9 @@ async def health():
     return {
         "status": "ok",
         "whatsapp_configured": get_whatsapp().configured,
+        "whatsapp_token_file": str(token_file_path()),
+        "whatsapp_has_token": bool(get_access_token()),
+        "whatsapp_token_expired": is_token_expired(),
         "gemini_configured": bool(settings.google_api_key or os.environ.get("GOOGLE_API_KEY")),
         "api_base_url": settings.api_base_url,
         "api_reachable": api_client.health_check() if api_client.api_enabled() else False,
@@ -117,10 +131,17 @@ def _verify_whatsapp_webhook(
 @app.get("/webhook")
 @app.get("/webhooks")  # common typo in Meta callback URL
 async def verify_webhook(
+    request: Request,
     hub_mode: str | None = Query(None, alias="hub.mode"),
     hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
     hub_challenge: str | None = Query(None, alias="hub.challenge"),
 ):
+    logger.info(
+        "Webhook verify attempt from %s mode=%s token_match=%s",
+        request.client.host if request.client else "?",
+        hub_mode,
+        hub_verify_token == settings.whatsapp_verify_token,
+    )
     return _verify_whatsapp_webhook(hub_mode, hub_verify_token, hub_challenge)
 
 
@@ -178,7 +199,7 @@ async def whatsapp_webhook(request: Request):
                         if not text_body:
                             continue
                         logger.info("WhatsApp message from %s: %s", from_id, text_body[:100])
-                        # Guided flow: PNR → station → vendor → menu (Gemini optional for help)
+                        # Guided flow: train → name → seat → category → menu
                         await menu_handler.handle_text(wa, from_id, text_body, runner)
                         continue
 
@@ -191,13 +212,19 @@ async def whatsapp_webhook(request: Request):
                             ("menu_train", "Order food"),
                         ],
                     )
+                except WhatsAppAuthError as exc:
+                    logger.error("WhatsApp auth error for %s: %s", from_id, exc)
+                    # Return 200 so Meta does not retry; fix token in data/whatsapp_token.txt
+                    return {"status": "ok", "whatsapp_auth": "failed"}
                 except Exception as exc:
                     logger.exception("Failed to handle message from %s", from_id)
-                    err_msg = "Sorry, something went wrong. Please try again."
-                    if wa.configured:
-                        await wa.send_text(from_id, err_msg)
-                        await menu_handler.send_main_menu(wa, from_id)
-                    return {"status": "error", "detail": str(exc)}
+                    try:
+                        if wa.configured:
+                            await wa.send_text(from_id, "Sorry, something went wrong. Please try again.")
+                            await menu_handler.send_main_menu(wa, from_id)
+                    except WhatsAppAuthError:
+                        logger.error("Could not send error reply — WhatsApp token invalid")
+                    return {"status": "ok", "handled": "error", "detail": str(exc)}
 
     return {"status": "ok"}
 

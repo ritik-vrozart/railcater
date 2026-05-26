@@ -59,7 +59,30 @@ curl -s -X POST http://localhost:8000/chat \
 2. Meta App → WhatsApp → Configuration:
    - Callback URL: `https://YOUR-NGROK/webhook`
    - Verify token: same as `WHATSAPP_VERIFY_TOKEN` in `.env`
-3. Set `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`
+3. Set `WHATSAPP_PHONE_NUMBER_ID` in `.env`
+
+### Permanent WhatsApp token (recommended)
+
+Graph API Explorer tokens expire in **~24 hours** and cause `401 Authentication Error`.
+
+Use a **System User** token (does not expire):
+
+1. [Meta Business Suite](https://business.facebook.com/) → **Business settings** → **System users**
+2. Add system user → **Generate token** → select your app
+3. Permissions: `whatsapp_business_messaging`, `whatsapp_business_management`
+4. Save the token locally (never commit it):
+
+```bash
+cd agent
+source .venv/bin/activate
+python scripts/save_whatsapp_token.py "YOUR_PERMANENT_TOKEN_HERE"
+```
+
+The token is stored in `data/whatsapp_token.txt` (gitignored) and used on every restart.
+
+Optional: set `WHATSAPP_APP_ID` + `WHATSAPP_APP_SECRET` in `.env` to auto-exchange short-lived tokens for **~60-day** tokens on startup and after 401.
+
+You can leave `WHATSAPP_ACCESS_TOKEN` empty in `.env` once the file is saved.
 
 ## ADK agent tools
 

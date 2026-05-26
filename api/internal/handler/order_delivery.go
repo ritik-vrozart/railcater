@@ -25,6 +25,10 @@ func (s *Server) UpdateOrderDelivery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apperror.BadRequest("invalid order id"))
 		return
 	}
+	if err := s.requireAuth(r); err != nil {
+		writeError(w, err)
+		return
+	}
 
 	var req updateOrderDeliveryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,6 +63,19 @@ func (s *Server) UpdateOrderDelivery(w http.ResponseWriter, r *http.Request) {
 	notifyCustomer := true
 	if req.NotifyCustomer != nil {
 		notifyCustomer = *req.NotifyCustomer
+	}
+
+	existing, err := s.orders.GetByID(r.Context(), s.tenantID, id)
+	if errors.Is(err, apperror.ErrNotFound) {
+		writeError(w, apperror.NotFound("order not found"))
+		return
+	} else if err != nil {
+		writeError(w, apperror.Internal(err))
+		return
+	}
+	if err := s.authorizeOrder(r, existing.VendorID); err != nil {
+		writeError(w, err)
+		return
 	}
 
 	o, err := s.orders.UpdateDeliverySchedule(r.Context(), s.tenantID, id, start, end, notifyCustomer)

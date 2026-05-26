@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     whatsapp_verify_token: str = "whatsapp_bot_verify"
     whatsapp_api_version: str = "v21.0"
+    # Optional: Meta app credentials for auto long-lived token exchange (~60 days)
+    whatsapp_app_id: str = ""
+    whatsapp_app_secret: str = ""
+    # Persisted token file (default agent/data/whatsapp_token.txt) — survives restarts
+    whatsapp_token_file: str = ""
     # Business number for wa.me "back to chat" (digits only, e.g. 15551919669)
     whatsapp_wa_me_number: str = "15551919669"
 

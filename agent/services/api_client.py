@@ -72,6 +72,18 @@ def health_check() -> bool:
 # --- Train food ---
 
 
+def lookup_train_by_number(number: str) -> dict[str, Any]:
+    return _request("GET", f"/trains/number/{number.strip()}")
+
+
+def list_menu_categories(vendor_id: str, *, active_only: bool = True) -> list[dict[str, Any]]:
+    params = {}
+    if not active_only:
+        params["active_only"] = "false"
+    data = _request("GET", f"/vendors/{vendor_id}/menu/categories", params=params or None)
+    return data.get("data", []) if isinstance(data, dict) else []
+
+
 def lookup_pnr(pnr: str) -> dict[str, Any]:
     return _request("GET", f"/pnr/{pnr.strip()}")
 
@@ -89,10 +101,47 @@ def list_station_vendors(station_id: str) -> list[dict[str, Any]]:
     return data.get("data", []) if isinstance(data, dict) else []
 
 
-def get_vendor_menu(vendor_id: str, *, active_only: bool = True) -> list[dict[str, Any]]:
-    params = {} if active_only else {"active_only": "false"}
+def get_vendor_menu(vendor_id: str, *, active_only: bool = True, menu_date: str | None = None) -> list[dict[str, Any]]:
+    from datetime import date
+
+    params: dict[str, str] = {}
+    if not active_only:
+        params["active_only"] = "false"
+    params["date"] = menu_date or date.today().isoformat()
     data = _request("GET", f"/vendors/{vendor_id}/menu", params=params)
     return data.get("data", []) if isinstance(data, dict) else []
+
+
+def create_whatsapp_train_order(
+    *,
+    train_number: str,
+    vendor_id: str,
+    passenger_name: str,
+    coach: str,
+    berth: str,
+    items: list[dict[str, Any]],
+    customer_id: str | None = None,
+    train_id: str | None = None,
+    station_id: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "train_number": train_number.strip(),
+        "vendor_id": vendor_id,
+        "passenger_name": passenger_name.strip(),
+        "coach": coach.strip(),
+        "berth": berth.strip(),
+        "items": items,
+    }
+    if train_id:
+        body["train_id"] = train_id
+    if station_id:
+        body["station_id"] = station_id
+    if customer_id:
+        body["customer_id"] = customer_id
+    if notes:
+        body["notes"] = notes
+    return _request("POST", "/orders/train/whatsapp", json=body)
 
 
 def create_train_order(

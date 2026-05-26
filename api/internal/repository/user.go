@@ -13,8 +13,7 @@ import (
 )
 
 var validRoles = map[string]bool{
-	"super_admin": true, "operations_manager": true, "vendor_admin": true,
-	"kitchen_staff": true, "delivery_agent": true, "passenger": true,
+	"super_admin": true, "vendor_admin": true, "passenger": true,
 }
 
 type UserRepository struct {

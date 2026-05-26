@@ -14,7 +14,12 @@ export function formatDate(iso: string): string {
 }
 
 export function formatRole(role: string): string {
-  return role.replace(/_/g, ' ')
+  const labels: Record<string, string> = {
+    super_admin: 'Department head',
+    vendor_admin: 'Pantry manager',
+    passenger: 'Passenger',
+  }
+  return labels[role] ?? role.replace(/_/g, ' ')
 }
 
 export function formatStatus(status: string): string {

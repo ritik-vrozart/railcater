@@ -42,7 +42,16 @@ type CreateOrderInput struct {
 	Items      []OrderLineInput
 }
 
-func (r *OrderRepository) List(ctx context.Context, tenantID uuid.UUID, page, perPage int, status string, vendorID, customerID *uuid.UUID) ([]models.Order, int, error) {
+type OrderListFilter struct {
+	Status     string
+	VendorID   *uuid.UUID
+	CustomerID *uuid.UUID
+	From       *time.Time
+	ToEnd      *time.Time // exclusive end (start of day after To)
+	TrainOnly  bool
+}
+
+func (r *OrderRepository) List(ctx context.Context, tenantID uuid.UUID, page, perPage int, f OrderListFilter) ([]models.Order, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -53,17 +62,24 @@ func (r *OrderRepository) List(ctx context.Context, tenantID uuid.UUID, page, pe
 
 	where := "o.tenant_id = $1"
 	args := []any{tenantID}
-	if status != "" {
-		args = append(args, status)
+	if f.Status != "" {
+		args = append(args, f.Status)
 		where += fmt.Sprintf(" AND o.status = $%d", len(args))
 	}
-	if vendorID != nil {
-		args = append(args, *vendorID)
+	if f.VendorID != nil {
+		args = append(args, *f.VendorID)
 		where += fmt.Sprintf(" AND o.vendor_id = $%d", len(args))
 	}
-	if customerID != nil {
-		args = append(args, *customerID)
+	if f.CustomerID != nil {
+		args = append(args, *f.CustomerID)
 		where += fmt.Sprintf(" AND o.customer_id = $%d", len(args))
+	}
+	if f.From != nil && f.ToEnd != nil {
+		args = append(args, *f.From, *f.ToEnd)
+		where += fmt.Sprintf(" AND o.created_at >= $%d AND o.created_at < $%d", len(args)-1, len(args))
+	}
+	if f.TrainOnly {
+		where += " AND o.vendor_id IS NOT NULL"
 	}
 
 	var total int

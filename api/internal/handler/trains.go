@@ -4,12 +4,45 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/apperror"
+	"github.com/ritikkumarpathak/whatsapp-bot/api/internal/models"
 )
+
+func (s *Server) GetTrainByNumber(w http.ResponseWriter, r *http.Request) {
+	number := strings.TrimSpace(chi.URLParam(r, "number"))
+	if number == "" {
+		writeError(w, apperror.BadRequest("train number is required"))
+		return
+	}
+
+	train, err := s.trains.GetByNumber(r.Context(), s.tenantID, number)
+	if errors.Is(err, apperror.ErrNotFound) {
+		writeError(w, apperror.NotFound("train not found"))
+		return
+	} else if err != nil {
+		writeError(w, apperror.Internal(err))
+		return
+	}
+
+	pantries, err := s.vendors.ListForTrain(r.Context(), s.tenantID, train.ID)
+	if err != nil {
+		writeError(w, apperror.Internal(err))
+		return
+	}
+	if pantries == nil {
+		pantries = []models.Vendor{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"train":    train,
+		"pantries": pantries,
+	})
+}
 
 func (s *Server) ListTrains(w http.ResponseWriter, r *http.Request) {
 	activeOnly := r.URL.Query().Get("active_only") == "true"

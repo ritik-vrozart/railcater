@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,19 @@ func (r *TrainRepository) List(ctx context.Context, tenantID uuid.UUID, activeOn
 		items = append(items, t)
 	}
 	return items, rows.Err()
+}
+
+func (r *TrainRepository) GetByNumber(ctx context.Context, tenantID uuid.UUID, number string) (models.Train, error) {
+	number = strings.TrimSpace(number)
+	row := r.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, number, name, is_active, created_at, updated_at
+		FROM trains WHERE tenant_id = $1 AND number = $2
+	`, tenantID, number)
+	train, err := scanTrain(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.Train{}, apperror.ErrNotFound
+	}
+	return train, err
 }
 
 func (r *TrainRepository) GetByID(ctx context.Context, tenantID, id uuid.UUID) (models.TrainDetail, error) {
@@ -316,6 +330,28 @@ func stopDateTimes(journeyDate time.Time, stop models.TrainRouteStop, delayMinut
 
 	delay := time.Duration(delayMinutes) * time.Minute
 	return arrival.Add(delay), departure.Add(delay), nil
+}
+
+func (r *TrainRepository) UpsertByNumber(ctx context.Context, tenantID uuid.UUID, number, name string) (models.Train, error) {
+	number = strings.TrimSpace(number)
+	name = strings.TrimSpace(name)
+	if number == "" {
+		return models.Train{}, apperror.BadRequest("train number is required")
+	}
+	if name == "" {
+		name = "Train " + number
+	}
+
+	row := r.pool.QueryRow(ctx, `
+		INSERT INTO trains (tenant_id, number, name, is_active)
+		VALUES ($1, $2, $3, true)
+		ON CONFLICT (tenant_id, number) DO UPDATE SET
+			name = EXCLUDED.name,
+			is_active = true,
+			updated_at = now()
+		RETURNING id, tenant_id, number, name, is_active, created_at, updated_at
+	`, tenantID, number, name)
+	return scanTrain(row)
 }
 
 func combineDateAndTime(date time.Time, timeStr string, loc *time.Location) (time.Time, error) {

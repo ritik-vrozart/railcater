@@ -1,10 +1,4 @@
-export type UserRole =
-  | 'passenger'
-  | 'vendor_admin'
-  | 'kitchen_staff'
-  | 'delivery_agent'
-  | 'operations_manager'
-  | 'super_admin'
+export type UserRole = 'passenger' | 'vendor_admin' | 'super_admin'
 
 export interface User {
   id: string
